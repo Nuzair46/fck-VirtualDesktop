@@ -56,9 +56,30 @@ internal static class PatchManaged
         var tuple=(GenericInstSig)getTask.GenericArguments[0];
         var tupleCtor=m.GetMemberRefs().Single(x=>x.IsMethodRef && x.Name==".ctor" &&
             x.DeclaringType.FullName==tuple.FullName && x.MethodSig.Params.Count==2);
-        il=Replace(get); EmitToken(il,ctor,account); EmitToken(il,ctor,account); il.Add(Instruction.Create(OpCodes.Newobj,tupleCtor));
+        // Discovery caches its broadcast/RSA key by the FIRST token's object identity.
+        // OnCreate stores the completed local-token Task before starting networking.
+        // Reuse that token and retain the original independent second-token clone.
+        var accessTokenTask=create.DeclaringType.Fields.Single(x=>x.Name=="_accessTokenTask" && x.IsStatic &&
+            x.FieldSig.Type.FullName==create.ReturnType.FullName);
+        var cachedResult=new MemberRefUser(m,"get_Result",MethodSig.CreateInstance(new GenericVar(0)),
+            new TypeSpecUser(accessTokenTask.FieldSig.Type));
+        var tokenType=createTask.GenericArguments[0].ToTypeDefOrRef();
+        var clone=m.GetMemberRefs().Single(x=>x.IsMethodRef && x.Name=="Clone" &&
+            x.DeclaringType.FullName==tokenType.FullName && x.MethodSig.Params.Count==0);
+        var clearProof=m.GetMemberRefs().Single(x=>x.IsMethodRef && x.Name=="set_UserProof" &&
+            x.DeclaringType.FullName==tokenType.FullName && x.MethodSig.Params.Count==1);
+        il=Replace(get);
+        il.Add(Instruction.Create(OpCodes.Ldsfld,accessTokenTask));
+        il.Add(Instruction.Create(OpCodes.Callvirt,cachedResult));
+        il.Add(Instruction.Create(OpCodes.Dup));
+        il.Add(Instruction.Create(OpCodes.Ldnull));
+        il.Add(Instruction.Create(OpCodes.Callvirt,clearProof));
+        il.Add(Instruction.Create(OpCodes.Dup));
+        il.Add(Instruction.Create(OpCodes.Callvirt,clone));
+        il.Add(Instruction.Create(OpCodes.Castclass,tokenType));
+        il.Add(Instruction.Create(OpCodes.Newobj,tupleCtor));
         il.Add(Instruction.Create(OpCodes.Call,FromResult(m,tuple,getTask.GenericType))); il.Add(Instruction.Create(OpCodes.Ret));
-        Changed(get,"Return two local tokens without user proofs; registry lookup remains offline.");
+        Changed(get,"Reuse the cached local first token and clone the second without user proofs; preserve discovery key caching and offline registry behavior.");
         var onCreate=matches.Methods["android.startup"];
         var cert=onCreate.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ldstr &&
             ((string)i.Operand).StartsWith("308203a73082028f")).ToArray();
