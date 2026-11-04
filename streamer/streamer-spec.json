@@ -1,0 +1,67 @@
+{
+  "schema_version": 2,
+  "profile_id": "vd-streamer-local-v2",
+  "normalization": "vd-streamer-il-context-v1",
+  "baseline_version": "1.34.25.0",
+  "baseline_sha256": "0229a322137f55687240d2b51f5f7002056d9277d7fa001ec6cb4eb25af0bfb8",
+  "methods": [
+    {
+      "id": "registration",
+      "signature": "System.Void VirtualDesktop.Streamer.ConnectionManager/<>c/\u0001::\u0001()",
+      "semantic_sha256": "c0cf87269a47be474ba44e2542f77fc43ee8f36718c8e81f706da826ca13bc95",
+      "sites": {
+        "offline_leave": 119,
+        "completion": 446,
+        "retry_first": 431,
+        "retry_second": 432,
+        "nullable_ctor": 212,
+        "from_result": 213
+      }
+    },
+    {
+      "id": "update_task",
+      "signature": "System.Threading.Tasks.Task`1<System.Nullable`1<System.Boolean>> VirtualDesktop.Streamer.UpdateHelper::\u0002()",
+      "semantic_sha256": "874e112b210cef671d970164347800608955e60c2c00d986770171a6e29b1783",
+      "sites": {}
+    },
+    {
+      "id": "connectivity_probe",
+      "signature": "System.Boolean VirtualDesktop.Streamer.ConnectionManager::\u0001(System.String)",
+      "semantic_sha256": "e69c65d7f562322e47cedbeb15fc124601889117443a93306465ed1dcc1d97a4",
+      "sites": {}
+    },
+    {
+      "id": "traceroute",
+      "signature": "System.Void VirtualDesktop.Streamer.ConnectionManager::\u0005()",
+      "semantic_sha256": "f0685d529e260adc733aa4395422c01cc829302b68d2a07c85cb97ddd4884a07",
+      "sites": {}
+    },
+    {
+      "id": "startup",
+      "signature": "System.Void VirtualDesktop.Streamer.App::OnStartup(System.Windows.StartupEventArgs)",
+      "semantic_sha256": "1732b0c74a5f1e65a84557696ec3f286bb200be706dfc36abc8043d996f833b0",
+      "sites": {
+        "self_signature": 44,
+        "self_signature_branch": 45
+      }
+    },
+    {
+      "id": "critical_updater",
+      "signature": "System.Nullable`1<System.Boolean> VirtualDesktop.Streamer.UpdateHelper::\u0001(System.Boolean)",
+      "semantic_sha256": "eff544a4a067759c9bcc5852aef5dcab2cb57217b2355bea623b6a447bcc77ec",
+      "sites": {}
+    },
+    {
+      "id": "rsa_import",
+      "signature": "System.Void \u0084\u0002.\u0002::\u0001(System.Security.Cryptography.RSA)",
+      "semantic_sha256": "c34e8023d89da03f6a4c1d954949e97722ac5bb2096c167f922b3e6e874eebae",
+      "sites": {}
+    },
+    {
+      "id": "rsa_verify",
+      "signature": "System.Boolean \u0084\u0002.\u0002::\u0001(System.Byte[],System.Int32,System.Int32,System.Byte[])",
+      "semantic_sha256": "57ab4a1a9a5d3a256a3fdaaf4c5d258265d4129babbc9b34f22a088a454f9c6d",
+      "sites": {}
+    }
+  ]
+}

@@ -1,0 +1,87 @@
+StreamerHost.ps1 interface
+
+Every action emits one UTF-8 JSON object. Failures emit Succeeded=false and Error,
+then exit with code 1. Existing account names and settings contents are not
+printed. Staged files and backups contain private settings and stay in the
+caller-selected state directory.
+
+Detect [-InstallDirectory DIR]
+  Finds the Streamer through its uninstall registry entry and Program Files
+  fallbacks. Exposes Executable, InstallDirectory, Version, Sha256, IsRunning,
+  SettingsPath, SupportedStock and SupportedPatched. Multiple installations are
+  reported as ambiguous. Unknown process paths remain explicitly unverified.
+  Stock compatibility uses eight guarded normalized IL signatures, resolving
+  the actual tokens/RVAs; file version and global hash are informational.
+  CompatibilityError explains an unsupported context. A patched executable is
+  recognized only through its install receipt/hash and verified original backup.
+
+StageSettings -InstallDirectory DIR -StateDirectory STATE -Account LOCALNAME
+  Reads current settings, saves a byte-exact verified backup, and writes a
+  reviewable staged document. Adds only the pairing account to Accounts.OculusQuest
+  and sets AllowRemoteConnections=false. Other fields/accounts remain. Five
+  existing Quest accounts require explicit user cleanup. No installed settings
+  are changed. An absent settings file gets a minimal staged document.
+
+ApplySettings -InstallDirectory DIR -StateDirectory STATE
+  Requires Streamer stopped and unchanged source settings. Atomically applies the
+  reviewed stage, with a recovery receipt written first. A changed preimage is
+  refused. The toolchain stages again after graceful exit, since exiting Streamer
+  can save settings; the earlier prepare preview remains separately preserved.
+
+CheckRestoreSettings -InstallDirectory DIR -StateDirectory STATE
+  Read-only preflight; run after stopping Streamer and before restoring either
+  application. Modes: ExactBackup, MergeCurrent, DeleteCreated, AlreadyRestored,
+  NoChangesApplied. Unknown schemas or ambiguous interrupted applies are refused.
+
+RestoreSettings -InstallDirectory DIR -StateDirectory STATE
+  Exact unchanged stages restore the original bytes. If the app/user changed
+  unrelated settings, removes only our added pairing account and restores the
+  remote setting only while its current value is the false value we applied.
+  Newly added accounts and all other current settings remain intact. Current
+  bytes are backed up before merging. Initially absent files are deleted only
+  when they still exactly match our created document; otherwise user additions
+  remain. Completed restores do not undo later user changes.
+
+Stop -InstallDirectory DIR -StateDirectory PROCESSSTATE [-ForceStop]
+  Verifies exact executable identities and records prior running state. Uses
+  the app's supported /Exit switch, hidden. Forced PID-specific termination is
+  available only when explicitly selected and only for verified original PIDs.
+  Service handling is limited to VirtualDesktop service images inside the
+  selected installation. The separate legacy Virtual Desktop service is excluded.
+
+Start -InstallDirectory DIR -StateDirectory PROCESSSTATE [-StartIfStopped]
+  Restores recorded services and prior app running state. An initially stopped
+  app remains stopped unless StartIfStopped is explicitly supplied. This action
+  checks that launch stays alive briefly; it does not prove streaming works.
+
+CheckDisableUpdater -InstallDirectory DIR -StateDirectory UPDATERSTATE
+  Read-only optional preflight. Status ReadyToDisable, AlreadyDisabled or
+  UpdaterMissing. An existing unowned Updater.exe.bak is a conflict, even when
+  Updater.exe is absent. No journal or directory is created during preflight.
+
+DisableUpdater -InstallDirectory DIR -StateDirectory UPDATERSTATE
+  Requires the Streamer stopped. Records exact paths and hash in
+  updater-receipt.json before renaming Updater.exe to Updater.exe.bak. The rename
+  never overwrites an existing file. Repeated calls recover a completed rename.
+
+CheckRestoreUpdater -InstallDirectory DIR -StateDirectory UPDATERSTATE
+  Read-only. Status ReadyToRestore, AlreadyRestored or NoChangesApplied. Refuses
+  changed bytes and simultaneous .exe/.bak paths before other restore mutations.
+
+RestoreUpdater -InstallDirectory DIR -StateDirectory UPDATERSTATE
+  Restores only the journaled hash through a non-overwriting rename, including
+  interrupted Prepared/Restoring states. Missing journal returns NoChangesApplied
+  without inspecting an unowned .bak as ours. Never overwrites a new updater.
+
+SettingsPath can be supplied explicitly for tests or a nonstandard configuration.
+The production default is ProgramData\Virtual Desktop\StreamerSettings.json.
+
+Verification: 20 fixture checks passed. They cover settings preservation,
+byte-exact recovery, safe merging, absent-file handling, duplicate/limit checks,
+schema conflicts, process identity guards, and mocked graceful/forced stop and
+restart. The real installed executable/settings remained unchanged. Actual
+process/service stop, installation and headset streaming were not exercised.
+
+Static lifecycle evidence is retained under streamer/evidence: App.OnStartup's
+Arguments.Exit branch, the argument parser accepting /Exit, and the self-signature
+WinVerifyTrust call addressed by the updated Streamer patcher.

@@ -1,0 +1,87 @@
+name: Build and release Windows EXE
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'New release tag (for example v0.1.0)'
+        type: string
+        required: true
+      prerelease:
+        description: 'Mark the release as a prerelease'
+        type: boolean
+        default: true
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  executable:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build and verify standalone EXE
+        shell: powershell
+        run: .\Build-Release.ps1 -OutputDirectory "${{ runner.temp }}\vd-offline-release"
+      - name: Upload runnable EXE and source
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: VirtualDesktop-OfflineTool-windows-x64
+          path: |
+            ${{ runner.temp }}/vd-offline-release/VirtualDesktop-OfflineTool.exe
+            ${{ runner.temp }}/vd-offline-release/VirtualDesktop-OfflineTool-source.zip
+            ${{ runner.temp }}/vd-offline-release/SHA256SUMS.txt
+            ${{ runner.temp }}/vd-offline-release/standalone-verification.json
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    if: github.event_name == 'workflow_dispatch'
+    needs: executable
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: VirtualDesktop-OfflineTool-windows-x64
+          path: release-files
+      - name: Publish manual release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$') {
+            throw 'Use a new version tag such as v0.1.0 or v0.1.0-beta.1.'
+          }
+          $expected=(Get-Content -LiteralPath 'release-files/SHA256SUMS.txt').Split(' ')[0]
+          $actual=(Get-FileHash -LiteralPath 'release-files/VirtualDesktop-OfflineTool.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw 'Release executable checksum mismatch.' }
+          $notes=@'
+          Run VirtualDesktop-OfflineTool.exe on Windows x64. The EXE includes the required tools and ADB; supply your own original APK/Streamer or connect an authorized headset.
+
+          Includes checked code profiles, optional Updater.exe backup/restore, and manual APK mode. Profiles were derived from Virtual Desktop 1.34.25.0. Other versions require all profile checks to pass.
+
+          Experimental: packaging and static checks pass; headset startup and VR streaming still require runtime testing. Original application binaries and private keys are not included.
+          '@
+          Set-Content -LiteralPath 'release-notes.txt' -Value $notes -Encoding UTF8
+          $arguments=@('release','create',$env:RELEASE_TAG,'--target',$env:RELEASE_COMMIT,
+            '--title',('Virtual Desktop Offline Tool '+$env:RELEASE_TAG),'--notes-file','release-notes.txt')
+          if ($env:PRERELEASE -eq 'true') { $arguments+='--prerelease' }
+          $arguments+=@('release-files/VirtualDesktop-OfflineTool.exe','release-files/SHA256SUMS.txt',
+            'release-files/VirtualDesktop-OfflineTool-source.zip')
+          & gh @arguments
+          if ($LASTEXITCODE -ne 0) { throw 'Release creation failed; existing releases are never overwritten.' }

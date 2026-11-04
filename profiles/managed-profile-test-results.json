@@ -1,0 +1,14 @@
+{
+  "profile_id": "vd-quest-local-pairing-v1",
+  "required_methods": 15,
+  "tests": {
+    "baseline_accepted": true,
+    "metadata_change_accepted_and_patched": true,
+    "layout_change_accepted_and_patched": true,
+    "changed_metadata_tokens_accepted": true,
+    "encoding_change_accepted_and_patched": true,
+    "bad-constant_rejected_before_writes": true,
+    "bad-control_rejected_before_writes": true
+  },
+  "runtime_executed": false
+}

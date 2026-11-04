@@ -1,0 +1,12 @@
+{
+    "schema_version":  1,
+    "account":  "vdlocaltest",
+    "platform":  1,
+    "signature_algorithm":  "RSA-PSS-SHA256",
+    "signature_base64":  "UNmfCjK+ePX/uDUFe1RPvkVVgfxB5wBmAu/e8bHJ3O2XQGuPFufjrT6rD3ZD1qYq9Lftu09ASeWCc9ZH7mlxir6DOEPpUEJ4+s0V0ysFZH2WUHS5aaZBvoAijTEqVIFotYXSMEdNW0SgKqdxZ9SLuZCAJ8aBFS7G1sdK6W3oD0flBI33fO3Nvb4PnRw36Qxa1rv97C3HoTZS85FOdzzbK1NpkCXddb5NJUe9XL44iBzD4i3xrezXodZyqb+9pB1oW5e9XPcc227rOv7hC5rAVwfo44KwYOeswpcGrCfEwK9IDHeezIoGbp+04AL+f8x5fnTOIrQeP3wS8Ozv0JQoPA==",
+    "modulus_base64":  "qQapTqITKHasM+obqAm8IqHqRjRhQYeJ4t8CMoYoet2O2efqO7AOyIFkKi+AWCpFTAmAMTNne4Gv2HtIYm6XyZsXaumafJOIaxO1FTSEiHNLOylwxG7JaC+WNXTjngqlzibs9O4+QWDKA0OCrFTwDXynCk+5YtRrMFunzleF34geMgxObglk8oRSZqQR9RUDd3PhzMi/b9p+fNYDKIDdGJ689GRPC1yvbsuG9W22p8ZHPe1Jx1LFYu5aOujp85syO7Qr5rT+JE6yo7rmOC6ZsObzpKQAggE/uxst59pn9xvCtF3s4K7crLCziw3mZruLbE2Gm9TqRLlaIZSKNUZzvQ==",
+    "exponent_base64":  "AQAB",
+    "public_key_xml":  "\u003cRSAKeyValue\u003e\u003cModulus\u003eqQapTqITKHasM+obqAm8IqHqRjRhQYeJ4t8CMoYoet2O2efqO7AOyIFkKi+AWCpFTAmAMTNne4Gv2HtIYm6XyZsXaumafJOIaxO1FTSEiHNLOylwxG7JaC+WNXTjngqlzibs9O4+QWDKA0OCrFTwDXynCk+5YtRrMFunzleF34geMgxObglk8oRSZqQR9RUDd3PhzMi/b9p+fNYDKIDdGJ689GRPC1yvbsuG9W22p8ZHPe1Jx1LFYu5aOujp85syO7Qr5rT+JE6yo7rmOC6ZsObzpKQAggE/uxst59pn9xvCtF3s4K7crLCziw3mZruLbE2Gm9TqRLlaIZSKNUZzvQ==\u003c/Modulus\u003e\u003cExponent\u003eAQAB\u003c/Exponent\u003e\u003c/RSAKeyValue\u003e",
+    "signed_message_base64":  "AXZkbG9jYWx0ZXN0",
+    "created_utc":  "2026-11-04T08:41:13.1258461Z"
+}

@@ -1,0 +1,90 @@
+Virtual Desktop Android packaging profile
+2026-11-04
+
+Implemented commands (Python 3.11 or later):
+  repack_apk.py extract --apk ORIGINAL_APK --output EMPTY_DIRECTORY
+  repack_apk.py repack --apk ORIGINAL_APK --assemblies MODIFIED_DLL_DIRECTORY --output UNSIGNED_APK
+  signing.py init --directory KEY_DIRECTORY
+  signing.py sign --apk UNSIGNED_APK --output SIGNED_APK --directory KEY_DIRECTORY
+  signing.py verify --apk SIGNED_APK
+
+The DLL input directory for repack must contain exactly VirtualDesktop.Android.dll
+and VirtualDesktop.Mobile.dll. Input compatibility is determined by runtime and
+assembly-store structure, not by a fixed source version or whole-APK digest.
+An optional --expected-sha256 binds the input to its prepared-session digest;
+audit_apk.py accepts --expected-original-sha256 for the same purpose. The build
+orchestrator separately validates manifest package/version identity and the
+managed method-patching profile before a generated APK can be installed.
+The output APK must not exist. No installed program or headset is modified.
+
+Remaining structural limits: ARM64 little-endian ELF64; a non-allocated, last
+assembly payload aligned to at least16KiB; XABA version0x80010002; Mono normal
+AOT mode; and the two named VD assemblies. Assembly counts can vary when the
+sorted unique name-hash index covers every descriptor twice and the runtime
+mapping indexes remain a unique complete permutation. All existing index bytes
+are retained. Unsupported formats fail before repacking.
+
+Measured packaging facts for the retained1.34.25 input:
+- ARM64 ELF assembly-store carrier has a non-allocated payload section at offset
+  16384, outside all PT_LOAD segments. The section-header table follows payload.
+- Payload is XABA version0x80010002,185 assembly descriptors and370 hash-index
+  entries. Assembly names, mapping indexes, and hash lookup indexes are preserved.
+- Unchanged images retain their existing XALZ representation. Changed images are
+  stored as raw managed PE images with corrected data offsets and sizes. This
+  avoids depending on native preallocated decompression-buffer sizes.
+- libxamarin-app.so exports mono_aot_mode_name at VA134568. Its relocation points
+  to the text 'normal'. This is measured from the exact APK rather than inferred
+  from the presence of AOT files. Repack verifies this mode again.
+- The Android and Mobile AOT companions are omitted from generated APKs. The
+  expected behavior is Mono normal-mode JIT fallback for these modified managed
+  assemblies; all other native libraries and AOT images are retained unchanged.
+- The Java bridge uses managed metadata tokens/MVIDs, so the managed writer must
+  preserve those identities. This repacker does not itself rewrite managed IL.
+
+The official .NET Android35.0.92 runtime source accepts raw assembly bytes when
+the XALZ magic is absent (embedded-assemblies.cc, get_assembly_data). The same
+release calls mono_jit_set_aot_mode with the application-supplied mode.
+  https://github.com/dotnet/android/blob/35.0.92/src/native/monodroid/embedded-assemblies.cc
+  https://github.com/dotnet/android/blob/35.0.92/src/native/monodroid/monodroid-glue.cc
+Mono documents normal AOT as permitting JIT; full AOT disables JIT.
+  https://github.com/mono/mono/blob/main/mono/mini/jit.h
+
+Output validation:
+- Rebuilt store reparses; replacement bytes match exactly.
+- ELF load data remains unchanged; only payload size and section-header location
+  are changed in the ELF carrier metadata.
+- Every ZIP member CRC is checked. All untouched members preserve size and CRC.
+- Native .so ZIP members are stored and aligned to16KiB; other stored members
+  are aligned to4 bytes. The Android0xd935 extra field records the required
+  alignment as uint16 before its padding, including already-aligned entries.
+  This lets apksigner preserve alignment if signing inserts earlier records.
+  Old signing blocks/signature entries are omitted.
+- Official Android build-tools35 apksigner creates v1/v2/v3 signatures and then
+  independently verifies the result. zipalign.exe can independently check:
+    zipalign.exe -c -P 16 4 SIGNED_APK
+- Nineteen checks passed, recorded in repack-test-results.json. These include
+  store round-trip/corruption controls, boundary alignment-metadata checks, and
+  a small test APK signed by the real apksigner then accepted by official
+  zipalign at16KiB. A real APK with only its ZIP comment changed is accepted
+  despite its different whole-file SHA, while a conflicting prepared-session
+  SHA is rejected. Smaller valid stores are accepted; full-AOT and wrong-ABI
+  inputs are rejected. These tests do not execute Virtual Desktop.
+
+Alignment regression detail: AOSP apksig's alignment extra field has a minimum
+total length of6 bytes: two-byte ID, two-byte payload size, two-byte alignment,
+then padding. Zeroes in place of the alignment value tell the signer not to
+preserve alignment. This was caught in the first full-build audit and corrected
+before the final output build.
+  https://android.googlesource.com/platform/tools/apksig/+/master/src/main/java/com/android/apksig/ApkSigner.java
+
+Signing tools are portable and local to tools/. prepare_signing_tools.py fetches
+TemurinJRE21.0.13+9 and Android build-tools35.0.0 using pinned official URLs and
+SHA-256 digests. Java keytool generates a3072-bit local RSA APK-signing key. Its
+DER certificate is provided to the managed patcher for certificate pinning.
+Keep the private PKCS12 file and password file local; reuse the same signing
+identity for subsequent builds intended to update an installed patched APK.
+
+Limits: Successful APK signature/structure verification does not establish a
+successful Quest startup, graphics initialization, LAN session, tracking, audio,
+or reconnect. The expectation of normal-mode JIT fallback still needs device
+execution evidence. This task has not installed or launched the rebuilt APK.

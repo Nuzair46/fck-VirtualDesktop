@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "platform": "windows-x64",
+  "runtimes": [
+    {
+      "name": "python",
+      "version": "3.14.10",
+      "archive": "python-3.14.10-embed-amd64.zip",
+      "url": "https://www.python.org/ftp/python/3.14.10/python-3.14.10-embed-amd64.zip",
+      "hash_algorithm": "SHA256",
+      "hash": "90905e64a840557d8c1bc4f5b74db3d7ee85e3ffb217611cac1c7813acea4159",
+      "source": "https://www.python.org/downloads/release/python-31410/",
+      "entrypoint": "python.exe",
+      "licenses": ["LICENSE.txt"]
+    },
+    {
+      "name": "dotnet",
+      "version": "10.0.10",
+      "archive": "dotnet-runtime-10.0.10-win-x64.zip",
+      "url": "https://builds.dotnet.microsoft.com/dotnet/Runtime/10.0.10/dotnet-runtime-10.0.10-win-x64.zip",
+      "hash_algorithm": "SHA512",
+      "hash": "2161dfa1cf027cdc074de7195b5f206b17ebd829ae415b9e7c9ee5f06d3952b6583030022dbe0d6e9221b5c577c411d7cd5322241f6d2299d9c886641215699b",
+      "source": "https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json",
+      "entrypoint": "dotnet.exe",
+      "licenses": ["LICENSE.txt", "ThirdPartyNotices.txt"]
+    }
+  ]
+}
