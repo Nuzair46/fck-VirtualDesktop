@@ -10,10 +10,10 @@ internal static class ManagedProfileFixtures
 {
     public static int Main(string[] args) {
         try {
-            if(args.Length!=3) throw new ArgumentException("INPUT OUTPUT metadata|layout|encoding|bad-constant|bad-control");
+            if(args.Length!=3) throw new ArgumentException("INPUT OUTPUT metadata|layout|encoding|bad-constant|bad-control|bad-projection|bad-footer");
             if(Directory.Exists(args[1])) throw new IOException("Fixture output must be new");
             string[] files={"VirtualDesktop.Android.dll","VirtualDesktop.Mobile.dll","VirtualDesktop.Net.dll","VirtualDesktop.Interfaces.dll"};
-            if(!new [] {"metadata","layout","encoding","bad-constant","bad-control"}.Contains(args[2])) throw new ArgumentException("Unknown fixture mode");
+            if(!new [] {"metadata","layout","encoding","bad-constant","bad-control","bad-projection","bad-footer"}.Contains(args[2])) throw new ArgumentException("Unknown fixture mode");
             Directory.CreateDirectory(args[1]);
             foreach(string file in files) using(var m=ModuleDefMD.Load(Path.Combine(args[0],file))) {
                 if(args[2]=="metadata") {
@@ -31,6 +31,13 @@ internal static class ManagedProfileFixtures
                 } else if(args[2]=="encoding") {
                     foreach(var method in m.GetTypes().SelectMany(t=>t.Methods).Where(x=>x.HasBody)) method.Body.SimplifyMacros(method.Parameters);
                 } else if(file=="VirtualDesktop.Mobile.dll") {
+                    if(args[2]=="bad-projection") {
+                        var load=m.GetTypes().Single(t=>t.FullName=="VirtualDesktop.Mobile.UIGameSystem").Methods.Single(x=>x.Name=="LoadPage");
+                        load.Body.Instructions.Single(i=>i.OpCode==OpCodes.Ldc_R4 && (float)i.Operand==0.1f).Operand=0.2f;
+                    } else if(args[2]=="bad-footer") {
+                        var footer=m.GetTypes().Single(t=>t.FullName=="VirtualDesktop.Mobile.BottomPanel").Methods.Single(x=>x.IsInstanceConstructor);
+                        footer.Body.Instructions.Single(i=>i.OpCode==OpCodes.Ldstr && (string)i.Operand=="tbVersion").Operand="otherLabel";
+                    } else {
                     var check=m.GetTypes().Single(t=>t.FullName=="VirtualDesktop.Mobile.UserSettings").Methods.Single(x=>x.Name.String.StartsWith("<GetHasValidIdentityAsync>"));
                     if(args[2]=="bad-constant") {
                         var constant=check.Body.Instructions.Single(i=>i.IsLdcI4() && i.GetLdcI4Value()==1778352230);
@@ -38,6 +45,7 @@ internal static class ManagedProfileFixtures
                     } else {
                         var branch=check.Body.Instructions.First(i=>i.OpCode==OpCodes.Brtrue_S || i.OpCode==OpCodes.Brtrue);
                         branch.OpCode=branch.OpCode==OpCodes.Brtrue_S ? OpCodes.Brfalse_S : OpCodes.Brfalse;
+                    }
                     }
                 }
                 var options=new ModuleWriterOptions(m);

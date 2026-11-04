@@ -29,7 +29,7 @@ def main() -> None:
     results['baseline_accepted'] = baseline['compatible']
     with tempfile.TemporaryDirectory(prefix='vd-managed-profiles-') as temporary:
         temporary = Path(temporary)
-        for mode in ('metadata', 'layout', 'encoding', 'bad-constant', 'bad-control'):
+        for mode in ('metadata', 'layout', 'encoding', 'bad-constant', 'bad-control', 'bad-projection', 'bad-footer'):
             source = temporary / mode
             run([fixture, args.originals, source, mode])
             output = temporary / (mode + '-patched')
@@ -45,6 +45,9 @@ def main() -> None:
                 report = json.loads(run([tool, source, output, pairing['account'], pairing['signature_base64'], args.certificate]).stdout)
                 assert len(report['outputs']) == 2
                 assert all(x['definition_tokens_preserved'] and x['reference_tokens_preserved'] for x in report['outputs'])
+                guard = run([ROOT / 'tools/ManagedProjectionTests.exe', source / 'VirtualDesktop.Mobile.dll', output / 'VirtualDesktop.Mobile.dll'])
+                assert 'Guard fixtures passed:' in guard.stdout
+                results[mode + '_projection_guard_and_footer_verified'] = True
                 if mode == 'metadata':
                     assert report['version'] == '1.34.26.0'
                 results[mode + '_change_accepted_and_patched'] = True

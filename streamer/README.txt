@@ -11,7 +11,7 @@ Windows PowerShell 5.1 and Windows CNG; no private key is saved.
 Reviewed baseline: 1.34.25.0, SHA-256:
 0229a322137f55687240d2b51f5f7002056d9277d7fa001ec6cb4eb25af0bfb8
 
-Compatibility is decided by eight unique method signatures and normalized IL
+Compatibility is decided by nine unique method signatures and normalized IL
 contexts, not this file hash or its version number. Instructions, resolved
 method/field/type identities, string hashes, constants, locals and exception
 flow are guarded. Metadata token numbers and physical code locations are
@@ -82,7 +82,12 @@ The tokens and IL offsets below identify the reviewed baseline, not lookup keys.
   WinVerifyTrust helper, filename guard and all other callers remain unchanged.
 * Method 0x0600051d returns nullable false without launching Updater.exe. This
   covers the separate critical-update call made directly by App.OnStartup.
-* Twelve bounded byte regions change. File size, all metadata tokens and method
+* Method 0x060003fb, UISettings.get_ProductVersion(), calls its original version
+  formatter and appends " fkvd" with String.Concat. AssemblyVersion, FileVersion
+  and the shared formatter used by numeric/protocol code remain unchanged.
+  The suffix reuses the " -critical" user-string entry from the removed updater
+  body. Inspection requires that body to be its sole original IL reference.
+* Fifteen bounded byte regions change. File size, all metadata tokens and method
   RVAs remain intact. Replacement bodies have shortened declared code sizes
   and their obsolete exception-handler metadata is disabled.
 
@@ -103,24 +108,29 @@ modified methods. Installer install/restore/repeat-restore passed on an inert
 copied installation; process enumeration was mocked for that fixture. The real
 installation remained unchanged.
 
-Adaptive verification: 13 core Python tests, three metadata-profile tests and
-26 PowerShell host fixtures passed. A dnlib fixture shifted all eight method
+Adaptive verification: 15 core Python tests and three metadata-profile tests
+passed with the suffix. The preceding 26 PowerShell host fixtures cover unchanged
+host behavior. A dnlib fixture shifted all nine method
 tokens and RVAs; another expanded equivalent IL encodings and changed patch
 offsets. Both still matched and patched successfully. A duplicate target method
 was rejected as ambiguous. These rewritten assemblies were never executed and
 are not deployment artifacts. Installer install/restore/repeat-restore and
 changed-current refusal also passed with a relocated fixture's different SHA.
-For the baseline test pairing, the adaptive patch output is byte-identical to
-the earlier output used for the following differential ILVerify comparison.
+The actual four-instruction footer recipe was also executed in an owned dynamic
+method, substituting only a harmless version formatter: "9.8.7" became
+"9.8.7 fkvd". No vendor assembly was executed by that test. Numeric metadata
+tables are asserted byte-for-byte unchanged. The footer was not visually tested
+in a live Streamer window.
 
-ILVerify 9.0.0 checked the same 137 methods in original and patched files against
+Before the footer extension, ILVerify 9.0.0 checked the same 137 methods in
+original and patched files against
 .NET Framework 4.8 reference assemblies. Original obfuscated code has 476
 verifier errors; patched code has 459, with no added diagnostic. This differential
 check is NOT a clean verification pass or proof of execution.
 
-No modified Streamer was launched. No headset connection, streaming, reconnect,
-service compatibility, Windows publisher-signature behavior, or network capture
-was tested. The selected registration/update/probe paths are changed; this does
+These source-only checks do not test headset connection, streaming, reconnect,
+service compatibility, Windows publisher-signature behavior, or network capture.
+The selected registration/update/probe paths are changed; this does
 not prove that every other component or explicit UI action makes no internet
 request. Real offline acceptance still requires runtime testing with both paired
 outputs and the headset's remaining VR runtime.

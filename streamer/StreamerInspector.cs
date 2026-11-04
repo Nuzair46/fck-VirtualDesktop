@@ -53,16 +53,18 @@ public static class StreamerInspector {
         var json=new JavaScriptSerializer{MaxJsonLength=16*1024*1024};
         var profile=json.Deserialize<Profile>(File.ReadAllText(profilePath));
         if(profile.schema_version!=2 || profile.normalization!=Normalization || profile.profile_id!="vd-streamer-local-v2")throw new InvalidDataException("Unsupported Streamer profile");
-        if(profile.methods==null || profile.methods.Count!=8 || profile.methods.Select(x=>x.id).Distinct().Count()!=8)throw new InvalidDataException("Incomplete or duplicate Streamer profile");
+        if(profile.methods==null || profile.methods.Count!=9 || profile.methods.Select(x=>x.id).Distinct().Count()!=9)throw new InvalidDataException("Incomplete or duplicate Streamer profile");
         var bytes=File.ReadAllBytes(input);
         using(var module=ModuleDefMD.Load(bytes)){
             if(module.Name!="VirtualDesktop.Streamer.exe" || module.Assembly==null || module.Assembly.Name!="VirtualDesktop.Streamer")throw new InvalidDataException("Unexpected assembly identity");
             var methods=module.GetTypes().SelectMany(x=>x.Methods).ToArray();
             var result=new List<object>();
+            var selected=new Dictionary<string,MethodDef>();
             foreach(var rule in profile.methods){
                 var candidates=methods.Where(x=>x.FullName==rule.signature).ToArray();
                 if(candidates.Length!=1 || !candidates[0].HasBody)throw new InvalidDataException("Required method is missing or ambiguous: "+rule.id);
                 var m=candidates[0];var fingerprint=Fingerprint(m);
+                selected.Add(rule.id,m);
                 if(!capture && fingerprint!=rule.semantic_sha256)throw new InvalidDataException("Contextual IL signature mismatch: "+rule.id);
                 var sites=new Dictionary<string,object>();
                 foreach(var site in rule.sites){
@@ -73,7 +75,15 @@ public static class StreamerInspector {
                 }
                 result.Add(new{id=rule.id,signature=m.FullName,semantic_sha256=fingerprint,token=m.MDToken.Raw,rva=(uint)m.RVA,code_size=m.Body.Instructions.Sum(x=>x.GetSize()),instruction_count=m.Body.Instructions.Count,sites=sites});
             }
-            return json.Serialize(new{schema_version=2,profile_id=profile.profile_id,normalization=Normalization,version=System.Diagnostics.FileVersionInfo.GetVersionInfo(input).FileVersion,assembly_version=module.Assembly.Version.ToString(),source_sha256=Hash(bytes),source_size=bytes.Length,methods=result,compatible=!capture,runtime_tested=false});
+            // The updater body is already removed by the recipe. Its uniquely
+            // referenced string entry can hold the UI suffix without moving any
+            // metadata or adding tokens used by the obfuscator's delegate cache.
+            const string donor=" -critical";
+            var users=methods.Where(x=>x.HasBody).SelectMany(x=>x.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ldstr && (string)i.Operand==donor).Select(i=>x)).ToArray();
+            if(users.Length!=1 || users[0]!=selected["critical_updater"])throw new InvalidDataException("Footer suffix storage is not exclusively owned by the removed updater body");
+            var concat=module.GetMemberRefs().Where(x=>x.FullName=="System.String System.String::Concat(System.String,System.String)").ToArray();
+            if(concat.Length!=1)throw new InvalidDataException("String.Concat reference is missing or ambiguous");
+            return json.Serialize(new{schema_version=2,profile_id=profile.profile_id,normalization=Normalization,version=System.Diagnostics.FileVersionInfo.GetVersionInfo(input).FileVersion,assembly_version=module.Assembly.Version.ToString(),source_sha256=Hash(bytes),source_size=bytes.Length,methods=result,footer=new{suffix=" fkvd",storage_original=donor,concat_token=concat[0].MDToken.Raw},compatible=!capture,runtime_tested=false});
         }
     }
 }

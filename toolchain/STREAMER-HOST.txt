@@ -10,7 +10,7 @@ Detect [-InstallDirectory DIR]
   fallbacks. Exposes Executable, InstallDirectory, Version, Sha256, IsRunning,
   SettingsPath, SupportedStock and SupportedPatched. Multiple installations are
   reported as ambiguous. Unknown process paths remain explicitly unverified.
-  Stock compatibility uses eight guarded normalized IL signatures, resolving
+  Stock compatibility uses nine guarded normalized IL signatures, resolving
   the actual tokens/RVAs; file version and global hash are informational.
   CompatibilityError explains an unsupported context. A patched executable is
   recognized only through its install receipt/hash and verified original backup.

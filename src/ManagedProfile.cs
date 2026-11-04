@@ -188,7 +188,7 @@ internal static class ManagedProfile
             }
             string[] required={"android.create_token","android.get_tokens","android.startup","android.create_token_async","android.get_tokens_async",
                 "mobile.identity_getter","mobile.signature_getter","mobile.identity_async","mobile.identity_check","mobile.input_constructor",
-                "mobile.keyboard_constructor","mobile.discovery_async","net.discovery_message","interfaces.token_constructor","interfaces.token_constructor_userid"};
+                "mobile.keyboard_constructor","mobile.discovery_async","mobile.ui_load_page","mobile.footer_constructor","net.discovery_message","interfaces.token_constructor","interfaces.token_constructor_userid"};
             Check(required.All(id=>result.Methods.ContainsKey(id)),"Profile is missing a required recipe method");
             Check(profile.assemblies.Single(a=>a.file=="VirtualDesktop.Interfaces.dll").fields.Any(f=>
                 f.declaring_type=="VirtualDesktop.Interfaces.Platform"&&f.name=="OculusQuest"&&f.value=="1"),"Profile must validate the local Quest protocol value");
@@ -231,6 +231,12 @@ internal static class ManagedProfile
                     a.methods.Add(Seed(m,"mobile.input_constructor",x=>x.DeclaringType.FullName=="VirtualDesktop.Mobile.InputSystem"&&x.IsInstanceConstructor,Integer(1778352252)));
                     a.methods.Add(Seed(m,"mobile.keyboard_constructor",x=>x.DeclaringType.FullName=="VirtualDesktop.Mobile.Keyboard"&&x.IsInstanceConstructor,Integer(-1386013078)));
                     a.methods.Add(Seed(m,"mobile.discovery_async",x=>x.DeclaringType.FullName.Contains("/<GetComputersAsync>d__")&&x.Name=="MoveNext",new ManagedAnchor {kind="string_sha256",value=Hash(Encoding.UTF8.GetBytes("Meta servers unreachable, only showing local computers"))}));
+                    a.methods.Add(Seed(m,"mobile.ui_load_page",x=>x.DeclaringType.FullName=="VirtualDesktop.Mobile.UIGameSystem"&&x.Name=="LoadPage",
+                        Call("Xenko.Core.Mathematics.Matrix::LookAtRH"),Call("Xenko.Core.Mathematics.Matrix::OrthoRH"),Call("Xenko.Core.Mathematics.Matrix::Multiply"),
+                        new ManagedAnchor {kind="field",value="Xenko.Core.Mathematics.Matrix Xenko.UI.Renderers.UIRenderingContext::ViewProjectionMatrix"}));
+                    a.methods.Add(Seed(m,"mobile.footer_constructor",x=>x.DeclaringType.FullName=="VirtualDesktop.Mobile.BottomPanel"&&x.IsInstanceConstructor,
+                        Call("VirtualDesktop.Mobile.DynamicSettings::get_VersionString"),Call("Xenko.UI.Controls.TextBlock::set_Text"),
+                        new ManagedAnchor {kind="string_sha256",value=Hash(Encoding.UTF8.GetBytes("tbVersion"))}));
                 } else if(pair.Key=="VirtualDesktop.Net.dll") {
                     a.methods.Add(Seed(m,"net.discovery_message",x=>x.DeclaringType.FullName=="VirtualDesktop.Net.ComputerDiscoveryClient"&&x.Name=="CreateBroadcastMessage"));
                 } else {

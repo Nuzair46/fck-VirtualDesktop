@@ -2,13 +2,13 @@
 
 Prepare and install offline patches for your Virtual Desktop Streamer and Quest app from one Windows EXE.
 
-**[Download the Windows EXE](https://github.com/Nuzair46/fck-VirtualDesktop/releases/download/v0.1.0-beta.1/VirtualDesktop-OfflineTool.exe)** · [All releases](https://github.com/Nuzair46/fck-VirtualDesktop/releases)
+**[Download the Windows EXE](https://github.com/Nuzair46/fck-VirtualDesktop/releases/download/v0.1.0-beta.2/VirtualDesktop-OfflineTool.exe)** · [All releases](https://github.com/Nuzair46/fck-VirtualDesktop/releases)
 
 ADB and the other required tools are included. You do not need to install Python, Java, or build tools.
 
 **No Virtual Desktop APK, Streamer installer, or Streamer executable is supplied. You must provide your own originals.** The tool can copy the APK from your connected headset or use an APK file you select.
 
-> **Known issue in v0.1.0-beta.1:** a Quest Pro test reached the Streamer authorization prompt but showed a black screen with no headset menu. This is under investigation. The release is for testing; working VR streaming has not been verified. Keep your recovery backups.
+Patched apps show **`fkvd`** after the version number in both the Streamer and headset menu. This release includes the fix for the invisible headset menu in the first beta.
 
 ## Before you start
 
@@ -28,6 +28,8 @@ The headset still needs its VR runtime services. This tool does not replace the 
 5. **Click Install.** Review the replacement and app-data choices, then approve the Windows administrator prompt. Keep the headset connected until the operation finishes.
 
 Leave **Preserve app data** selected if you want to keep your data. This needs a verified root backup; without one, installation stops. Choose a clean installation only if you accept losing the existing app data.
+
+**Unrooted headset?** You can still extract, patch, and install through ADB. Select **Allow a clean headset installation and loss of existing app data** when installing. Only Virtual Desktop's app data is removed; other apps are unaffected. You can restore the original APK later, but app data without a backup cannot be recovered.
 
 You can also select **Disable Streamer updater** in the installation dialog. This renames `Updater.exe` to `Updater.exe.bak`; restoring the originals reverses it. A later vendor installation or repair may recreate the updater.
 
@@ -60,7 +62,7 @@ Keep the headset connected if that session used it. Recovery restores the saved 
 | Compatibility check failed | Check for a tool update. Matching method names alone do not guarantee a version is supported. |
 | App-data backup unavailable | Check headset root access, or explicitly choose a clean installation if data loss is acceptable. |
 | Recovery needed or `recovery_required` | Click **Recover originals**. After recovery, prepare a new session. |
-| Black screen with no VD menu after authorization | This is a known issue in the first beta. Use **Restore originals** to return to the original apps while it is investigated. |
+| Invisible menu with an older build | Restore the originals, then prepare and install fresh patches with the latest tool. |
 | `Cannot query installed APK paths` in an older build | Close the old tool, run this release, select the affected session, and click **Recover originals**. |
 | Another error | Enable **Show details** to read the full log. Keep the session and backups. |
 
@@ -70,7 +72,9 @@ Normal use does not need **Advanced options**. It contains overrides for ADB, de
 
 The current profiles were developed against **Virtual Desktop 1.34.25.0**, with Quest APK version code **10722**. Other versions may work only if all compatibility checks pass. Changed or ambiguous code stops preparation; there is no force-patch option.
 
-The first Quest Pro test reached VR initialization and Streamer authorization but did not display the menu. Working LAN discovery, video, audio, tracking, controllers, reconnect, and restart still need verification. Online features are outside the tool's scope.
+## Updating from an older tool
+
+Use **Restore originals** for the installed session first. Then open the latest EXE, click **Prepare patches**, and install the new session. Keep your existing working folder to reuse the pairing identity, signing key, and recovery backups.
 
 <details>
 <summary>File locations and backups</summary>
@@ -102,4 +106,8 @@ The first source build downloads pinned dependencies. End users only need the re
 
 </details>
 
-This is an unofficial modification and is not affiliated with Virtual Desktop or Meta. Bundled third-party tools retain their included licenses and notices.
+## License
+
+This codebase is available under the [MIT license](LICENSE). Virtual Desktop application files are supplied by the user and are not covered by this license. Bundled third-party tools retain their own licenses and notices.
+
+This is an unofficial modification and is not affiliated with Virtual Desktop or Meta.

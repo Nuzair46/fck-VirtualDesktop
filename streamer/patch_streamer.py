@@ -83,6 +83,37 @@ def _rva_offset(rva: int, sections: list[tuple[int,int,int]]) -> int:
         raise ValueError('Ambiguous or unmapped RVA')
     return matches[0]
 
+
+def _metadata_stream_offset(data: bytes, name: str) -> int:
+    """Resolve a CLI metadata stream without depending on physical file layout."""
+    sections=_pe_sections(data)
+    pe=struct.unpack_from('<I',data,60)[0]
+    optional=pe+24
+    if struct.unpack_from('<H',data,optional)[0] != 0x20b:
+        raise ValueError('Expected PE32+ optional header')
+    cli_rva=struct.unpack_from('<I',data,optional+112+14*8)[0]
+    cli=_rva_offset(cli_rva,sections)
+    metadata=_rva_offset(struct.unpack_from('<I',data,cli+8)[0],sections)
+    if data[metadata:metadata+4] != b'BSJB':
+        raise ValueError('Invalid CLI metadata signature')
+    version_length=struct.unpack_from('<I',data,metadata+12)[0]
+    cursor=metadata+16+version_length
+    count=struct.unpack_from('<H',data,cursor+2)[0]
+    cursor+=4
+    found=[]
+    for _ in range(count):
+        offset,size=struct.unpack_from('<II',data,cursor)
+        end=data.index(b'\0',cursor+8,cursor+40)
+        stream_name=data[cursor+8:end].decode('ascii')
+        if stream_name==name:
+            if offset+size>len(data)-metadata:
+                raise ValueError('Truncated metadata stream')
+            found.append(metadata+offset)
+        cursor=(end+4)&~3
+    if len(found)!=1:
+        raise ValueError('Metadata stream is missing or ambiguous: '+name)
+    return found[0]
+
 def inspect_streamer(input_path: str | Path) -> dict:
     source = Path(input_path).resolve()
     data = source.read_bytes()
@@ -99,7 +130,7 @@ def inspect_streamer(input_path: str | Path) -> dict:
         raise ValueError(report.get('error', 'Streamer contextual signatures did not match'))
     if report['source_sha256'] != sha256(data) or sha256(source.read_bytes()) != sha256(data):
         raise ValueError('Streamer input changed during metadata inspection')
-    report['compatibility_scope'] = ('Eight unique named method bodies match normalized IL context; '
+    report['compatibility_scope'] = ('Nine unique named method bodies match normalized IL context; '
         'metadata token and RVA changes are supported. Changed method names, instructions, '
         'string constants, or exception flow require a reviewed profile. No runtime proof.')
     return report
@@ -123,12 +154,30 @@ def build_patch(data: bytes, modulus_b64: str, *, _inspection: dict | None = Non
     sections = _pe_sections(data)
     specs = inspection['methods']
     roles={m['id']:m for m in specs}
-    if len(specs)!=8 or set(roles) != {'registration','update_task','connectivity_probe','traceroute','startup','critical_updater','rsa_import','rsa_verify'}:
+    if len(specs)!=9 or set(roles) != {'registration','update_task','connectivity_probe','traceroute','startup','critical_updater','rsa_import','rsa_verify','footer_version'}:
         raise ValueError('Incomplete or duplicate contextual method inspection')
     registration=roles['registration']['sites']
     ctor=registration['nullable_ctor']; from_result=registration['from_result']
     if ctor['opcode'] != 'newobj' or from_result['opcode'] != 'call':
         raise ValueError('Expected generic method token anchors')
+    footer=inspection['footer']
+    if footer['suffix']!=' fkvd' or footer['storage_original']!=' -critical':
+        raise ValueError('Unexpected display suffix recipe')
+    donor=roles['critical_updater']
+    donor_code=_rva_offset(donor['rva'],sections)+12
+    donor_site=donor['sites']['footer_suffix_storage']
+    donor_pos=donor_code+donor_site['offset']
+    if data[donor_pos]!=0x72 or donor_site['operand']!=footer['storage_original']:
+        raise ValueError('Footer suffix storage instruction mismatch')
+    donor_token=struct.unpack_from('<I',data,donor_pos+1)[0]
+    if donor_token>>24!=0x70:
+        raise ValueError('Expected user-string metadata token')
+    donor_entry=_metadata_stream_offset(data,'#US')+(donor_token&0xffffff)
+    # ECMA-335 #US kind byte is 1 for the donor's hyphen, 0 for our ASCII suffix.
+    old_string=footer['storage_original'].encode('utf-16-le')+b'\x01'
+    new_string=footer['suffix'].encode('utf-16-le')+b'\0'
+    if len(old_string)>=128 or data[donor_entry:donor_entry+1+len(old_string)]!=bytes([len(old_string)])+old_string:
+        raise ValueError('Footer suffix user-string heap anchor mismatch')
     output = bytearray(data)
     edits = []
     def replace(offset: int, before: bytes, after: bytes, reason: str) -> None:
@@ -188,6 +237,14 @@ def build_patch(data: bytes, modulus_b64: str, *, _inspection: dict | None = Non
             elif role == 'critical_updater':
                 body = b'\x16\x73'+struct.pack('<I',ctor['token'])+b'\x2a'
                 reason = 'Report no update without launching the external critical updater'
+            elif role == 'footer_version':
+                formatter=spec['sites']['version_formatter']
+                if formatter['opcode']!='call':
+                    raise ValueError('Unexpected displayed-version formatter')
+                body=(b'\x28'+struct.pack('<I',formatter['token'])+
+                      b'\x72'+struct.pack('<I',donor_token)+
+                      b'\x28'+struct.pack('<I',footer['concat_token'])+b'\x2a')
+                reason='Append fkvd to the displayed UI version only; preserve numeric versions'
             else:
                 raise ValueError('Unknown method role')
             # Retain RVA, allocated bytes and all metadata tokens. Shorten the
@@ -197,16 +254,21 @@ def build_patch(data: bytes, modulus_b64: str, *, _inspection: dict | None = Non
                 raise ValueError('Replacement cannot fit original method storage')
             header = bytearray(data[pos:pos+header_size])
             header[0] &= ~8
+            if role=='footer_version':
+                struct.pack_into('<H',header,2,max(2,struct.unpack_from('<H',header,2)[0]))
             struct.pack_into('<I',header,4,len(body))
             replace(pos,data[pos:pos+header_size],bytes(header),reason+' (header)')
             replace(code_pos,code,body+bytes(len(code)-len(body)),reason)
+    replacement=bytes([len(new_string)])+new_string+bytes(len(old_string)-len(new_string))
+    replace(donor_entry,data[donor_entry:donor_entry+1+len(old_string)],replacement,
+            'Reuse exclusively removed updater string storage for the UI suffix')
     old = ORIGINAL_MODULUS.encode('utf-16-le')
     new = modulus_b64.encode('utf-16-le')
     if data.count(old) != 1:
         raise ValueError('RSA modulus anchor is not unique')
     replace(data.index(old),old,new,'Trust this pairing key; preserve RSA-PSS signature and account checks')
     result = bytes(output)
-    if len(result) != len(data) or len(edits) != 12:
+    if len(result) != len(data) or len(edits) != 15:
         raise ValueError('Unexpected patch layout')
     # All untouched ranges must be byte-for-byte identical.
     cursor = 0
@@ -218,6 +280,7 @@ def build_patch(data: bytes, modulus_b64: str, *, _inspection: dict | None = Non
         raise ValueError('Unexpected trailing bytes changed')
     report = dict(schema_version=2,version=inspection['version'],source_sha256=sha256(data),
                   compatibility=inspection,
+                  display_version_suffix=footer['suffix'],
                   output_sha256=sha256(result),size=len(result),patches=edits,
                   changed_byte_count=sum(a!=b for a,b in zip(data,result)),
                   runtime_tested=False,authenticode='Original publisher signature invalid after modification')

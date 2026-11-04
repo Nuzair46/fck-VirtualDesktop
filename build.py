@@ -182,7 +182,7 @@ def build(args):
         pair['account'], pair['signature_base64'], cert], logs)
     verify_selections = {
         'VirtualDesktop.Android.dll': ('VrApp.CreateAccessTokenAsync|VrApp.GetAccessTokenAsync|VrApp.OnCreate', 3),
-        'VirtualDesktop.Mobile.dll': ('UserSettings.get_HasValidIdentity|UserSettings.get_Signature|UserSettings.*GetHasValidIdentityAsync|InputSystem..ctor|Keyboard..ctor', 6)
+        'VirtualDesktop.Mobile.dll': ('UserSettings.get_HasValidIdentity|UserSettings.get_Signature|UserSettings.*GetHasValidIdentityAsync|InputSystem..ctor|Keyboard..ctor|UIGameSystem.LoadPage|BottomPanel..ctor', 8)
     }
     il_results = []
     for dll, (selection, minimum) in verify_selections.items():

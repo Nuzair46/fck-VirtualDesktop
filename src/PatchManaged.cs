@@ -93,6 +93,56 @@ internal static class PatchManaged
         }
         return n;
     }
+    static void PatchUiProjection(ModuleDefMD module,MethodDef load) {
+        // The tested headset produced a zero XY basis in LoadPage's LookAt
+        // result; its underlying runtime cause remains unknown. Keep the math and
+        // repair only the fully observed degenerate projection, after it exists.
+        var context=load.DeclaringType.Fields.Single(x=>x.Name=="_renderingContext");
+        var virtualSize=load.DeclaringType.Fields.Single(x=>x.Name=="_virtualResolution");
+        var realSize=load.DeclaringType.Fields.Single(x=>x.Name=="_realResolution");
+        var address=load.Body.Instructions.Single(x=>x.OpCode==OpCodes.Ldflda && x.Operand is IField &&
+            ((IField)x.Operand).FullName=="Xenko.Core.Mathematics.Matrix Xenko.UI.Renderers.UIRenderingContext::ViewProjectionMatrix");
+        var projection=(IField)address.Operand;
+        int index=load.Body.Instructions.IndexOf(address);
+        var multiply=load.Body.Instructions[index+1];
+        Require(multiply.OpCode==OpCodes.Call && ((IMethod)multiply.Operand).FullName==
+            "System.Void Xenko.Core.Mathematics.Matrix::Multiply(Xenko.Core.Mathematics.Matrix&,Xenko.Core.Mathematics.Matrix&,Xenko.Core.Mathematics.Matrix&)","UI projection insertion point differs");
+        var resume=load.Body.Instructions[index+2];
+        var il=new List<Instruction>();
+        Func<string,string,IField> field=(type,name)=> {
+            var existing=module.GetMemberRefs().FirstOrDefault(x=>x.IsFieldRef && x.DeclaringType.FullName==type && x.Name==name);
+            return existing ?? new MemberRefUser(module,name,new FieldSig(module.CorLibTypes.Single),module.GetTypeRefs().Single(x=>x.FullName==type));
+        };
+        Action<FieldDef,string> size=(owner,component)=> {
+            il.Add(Instruction.Create(OpCodes.Ldarg_0));il.Add(Instruction.Create(OpCodes.Ldflda,owner));
+            il.Add(Instruction.Create(OpCodes.Ldfld,field(owner.FieldSig.Type.FullName,component)));
+        };
+        Action matrixAddress=()=> {
+            il.Add(Instruction.Create(OpCodes.Ldarg_0));il.Add(Instruction.Create(OpCodes.Ldfld,context));il.Add(Instruction.Create(OpCodes.Ldflda,projection));
+        };
+        Action<string> matrix=component=> {matrixAddress();il.Add(Instruction.Create(OpCodes.Ldfld,field(projection.FieldSig.Type.FullName,component)));};
+        Action<float,OpCode> reject=(constant,branch)=> {il.Add(Instruction.Create(OpCodes.Ldc_R4,constant));il.Add(Instruction.Create(branch,resume));};
+        foreach(string component in new[]{"X","Y"}) {
+            size(virtualSize,component);reject(1f,OpCodes.Blt_Un);
+            size(virtualSize,component);reject(4096f,OpCodes.Bgt_Un);
+            size(realSize,component);size(virtualSize,component);il.Add(Instruction.Create(OpCodes.Bne_Un,resume));
+        }
+        size(virtualSize,"Z");reject(1f,OpCodes.Bne_Un);
+        foreach(string component in new[]{"M11","M12","M13","M14","M21","M22","M23","M24","M31","M32","M34","M41","M42"}) {
+            matrix(component);reject(0f,OpCodes.Bne_Un);
+        }
+        matrix("M33");reject(1.11110f,OpCodes.Ble_Un);
+        matrix("M33");reject(1.11112f,OpCodes.Bge_Un);
+        matrix("M43");reject(0.99999f,OpCodes.Ble_Un);
+        matrix("M43");reject(1.00001f,OpCodes.Bge_Un);
+        matrix("M44");reject(1f,OpCodes.Bne_Un);
+        matrixAddress();il.Add(Instruction.Create(OpCodes.Ldc_R4,2f));size(virtualSize,"X");il.Add(Instruction.Create(OpCodes.Div));il.Add(Instruction.Create(OpCodes.Stfld,field(projection.FieldSig.Type.FullName,"M11")));
+        matrixAddress();il.Add(Instruction.Create(OpCodes.Ldc_R4,-2f));size(virtualSize,"Y");il.Add(Instruction.Create(OpCodes.Div));il.Add(Instruction.Create(OpCodes.Stfld,field(projection.FieldSig.Type.FullName,"M22")));
+        int insertAt=index+2;
+        foreach(var instruction in il)load.Body.Instructions.Insert(insertAt++,instruction);
+        load.Body.SimplifyBranches();
+        Changed(load,"Restore orthographic X/Y scales only for the runtime-verified zero-basis pattern, finite matching dimensions, and expected affine/Z entries; retain original math and every other matrix entry.");
+    }
     static void PatchMobile(ModuleDefMD m,string signature,int javaHash,int certHash,ManagedProfileMatches matches) {
         var settings=Type(m,"VirtualDesktop.Mobile.UserSettings");
         var valid=matches.Methods["mobile.identity_getter"]; var il=Replace(valid);
@@ -129,6 +179,18 @@ internal static class PatchManaged
                 ins.Operand="Offline pairing: showing local computers"; warnings++;
             }
         Require(warnings==1,"Offline UI warning pattern mismatch");
+        PatchUiProjection(m,matches.Methods["mobile.ui_load_page"]);
+        var footer=matches.Methods["mobile.footer_constructor"];
+        var version=footer.Body.Instructions.Single(x=>x.OpCode==OpCodes.Callvirt && x.Operand is IMethod &&
+            ((IMethod)x.Operand).FullName=="System.String VirtualDesktop.Mobile.DynamicSettings::get_VersionString()");
+        int footerIndex=footer.Body.Instructions.IndexOf(version);
+        var assign=footer.Body.Instructions[footerIndex+1];
+        Require(assign.OpCode==OpCodes.Callvirt && ((IMethod)assign.Operand).FullName=="System.Void Xenko.UI.Controls.TextBlock::set_Text(System.String)","Footer version label assignment differs");
+        var concat=m.GetMemberRefs().First(x=>x.IsMethodRef && x.FullName=="System.String System.String::Concat(System.String,System.String)");
+        footer.Body.Instructions.Insert(footerIndex+1,Instruction.Create(OpCodes.Ldstr," fkvd"));
+        footer.Body.Instructions.Insert(footerIndex+2,Instruction.Create(OpCodes.Call,concat));
+        footer.Body.SimplifyBranches();
+        Changed(footer,"Append fkvd to the headset footer's displayed version only; retain protocol and stored version values.");
     }
     static Dictionary<string,uint> Tokens(ModuleDef m) {
         var d=new Dictionary<string,uint>();

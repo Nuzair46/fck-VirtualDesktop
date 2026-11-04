@@ -10,7 +10,7 @@ from pathlib import Path
 import patch_streamer as patch
 
 ROOT=Path(__file__).parent
-SOURCE=Path(r'C:\Program Files\Virtual Desktop Streamer\VirtualDesktop.Streamer.exe')
+SOURCE=Path(os.environ.get('VD_STREAMER_ORIGINAL',r'C:\Program Files\Virtual Desktop Streamer\VirtualDesktop.Streamer.exe'))
 
 class StreamerProfileTests(unittest.TestCase):
     @classmethod
@@ -36,7 +36,7 @@ class StreamerProfileTests(unittest.TestCase):
         self.assertNotEqual(inspected['source_sha256'],self.baseline['source_sha256'])
         data=source.read_bytes()
         output,report=patch.build_patch(data,self.pair['modulus_base64'],_inspection=inspected)
-        self.assertEqual(len(report['patches']),12)
+        self.assertEqual(len(report['patches']),15)
         self.assertEqual(report['source_sha256'],patch.sha256(data))
         self.assertEqual(len(output),len(data))
         methods={m['id']:m for m in inspected['methods']}
@@ -48,6 +48,13 @@ class StreamerProfileTests(unittest.TestCase):
         task_code=patch._rva_offset(task['rva'],patch._pe_sections(data))+12
         self.assertEqual(struct.unpack_from('<I',output,task_code+2)[0],reg['sites']['nullable_ctor']['token'])
         self.assertEqual(struct.unpack_from('<I',output,task_code+7)[0],reg['sites']['from_result']['token'])
+        footer=methods['footer_version']
+        footer_code=patch._rva_offset(footer['rva'],patch._pe_sections(data))+12
+        self.assertEqual(struct.unpack_from('<I',output,footer_code+1)[0],footer['sites']['version_formatter']['token'])
+        self.assertEqual(struct.unpack_from('<I',output,footer_code+11)[0],inspected['footer']['concat_token'])
+        token=struct.unpack_from('<I',output,footer_code+6)[0]
+        entry=patch._metadata_stream_offset(output,'#US')+(token&0xffffff)
+        self.assertEqual(output[entry:entry+12],b'\x0b'+' fkvd'.encode('utf-16-le')+b'\0')
         return inspected
 
     def test_shifted_metadata_tokens_and_rvas(self):

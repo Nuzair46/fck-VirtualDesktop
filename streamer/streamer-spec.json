@@ -49,7 +49,9 @@
       "id": "critical_updater",
       "signature": "System.Nullable`1<System.Boolean> VirtualDesktop.Streamer.UpdateHelper::\u0001(System.Boolean)",
       "semantic_sha256": "eff544a4a067759c9bcc5852aef5dcab2cb57217b2355bea623b6a447bcc77ec",
-      "sites": {}
+      "sites": {
+        "footer_suffix_storage": 26
+      }
     },
     {
       "id": "rsa_import",
@@ -62,6 +64,14 @@
       "signature": "System.Boolean \u0084\u0002.\u0002::\u0001(System.Byte[],System.Int32,System.Int32,System.Byte[])",
       "semantic_sha256": "57ab4a1a9a5d3a256a3fdaaf4c5d258265d4129babbc9b34f22a088a454f9c6d",
       "sites": {}
+    },
+    {
+      "id": "footer_version",
+      "signature": "System.String VirtualDesktop.Streamer.UISettings::get_ProductVersion()",
+      "semantic_sha256": "2ed6ba7b1b0ffc4ea63e0bc89a34cd409d46dfe81a2a8bd915991af37f24bac8",
+      "sites": {
+        "version_formatter": 3
+      }
     }
   ]
 }

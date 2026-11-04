@@ -1,7 +1,7 @@
 Managed APK compatibility profile
 
 apk-managed-v1.json identifies named method signatures and hashes normalized IL
-semantics for 15 required methods across Android, Mobile, Net, and Interfaces.
+semantics for 17 required methods across Android, Mobile, Net, and Interfaces.
 It also checks selected call/constant patterns and the Quest platform value.
 The profile contains signatures and digests, not a copy of the application's IL.
 
@@ -35,4 +35,8 @@ Integration checks are in src/test_managed_profiles.py. They create copies with
 changed version/MVID, shifted metadata tokens, and alternate IL macro encodings;
 these must still probe and patch successfully. Changed certificate constants
 and inverted branch conditions must fail before any output folder is created.
+Changed UI projection code and version-footer assignments are also rejected.
+ManagedProjectionTests interprets the inserted guard IL over 101 owned fixtures
+and checks that removing the guard and suffix restores the original method
+semantics. It does not load or execute the application's assemblies.
 Results are recorded in managed-profile-test-results.json.

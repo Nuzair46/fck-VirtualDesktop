@@ -1,6 +1,6 @@
 {
   "profile_id": "vd-quest-local-pairing-v1",
-  "required_methods": 15,
+  "required_methods": 17,
   "tests": {
     "baseline_accepted": true,
     "metadata_change_accepted_and_patched": true,
@@ -8,7 +8,15 @@
     "changed_metadata_tokens_accepted": true,
     "encoding_change_accepted_and_patched": true,
     "bad-constant_rejected_before_writes": true,
-    "bad-control_rejected_before_writes": true
+    "bad-control_rejected_before_writes": true,
+    "bad-projection_rejected_before_writes": true,
+    "bad-footer_rejected_before_writes": true,
+    "projection_guard_cases_per_fixture": 101,
+    "original_control_flow_preserved": true,
+    "footer_version_accessors_unchanged": true,
+    "mobile_il_methods_verified": 9,
+    "android_il_methods_verified": 3,
+    "il_error_count": 0
   },
   "runtime_executed": false
 }
