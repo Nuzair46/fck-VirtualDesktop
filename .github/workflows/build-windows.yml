@@ -43,12 +43,12 @@ jobs:
           compression-level: 0
 
   release:
-    # Temporary bootstrap for the explicitly requested first release; remove after publication.
+    # Temporary trigger to add the observed runtime issue to the first beta's release notes.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main' &&
        github.repository == 'Nuzair46/fck-VirtualDesktop' &&
-       github.event.head_commit.message == 'Release v0.1.0-beta.1')
+       github.event.head_commit.message == 'Record Quest Pro black-screen issue')
     needs: executable
     runs-on: windows-latest
     permissions:
@@ -67,6 +67,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag || 'v0.1.0-beta.1' }}
           PRERELEASE: ${{ github.event_name == 'push' || inputs.prerelease }}
           RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_EDIT_ONLY: ${{ github.event_name == 'push' }}
         run: |
           $ErrorActionPreference='Stop'
           if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$') {
@@ -76,6 +77,8 @@ jobs:
           $actual=(Get-FileHash -LiteralPath 'release-files/VirtualDesktop-OfflineTool.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actual -ne $expected) { throw 'Release executable checksum mismatch.' }
           $notes=@'
+          > **Known issue in v0.1.0-beta.1:** a Quest Pro test reached Streamer authorization but showed a black screen with no headset menu. This is under investigation. Working VR streaming is not verified. Keep your recovery backups; use **Restore originals** to revert.
+
           ## Download and run
 
           Download **VirtualDesktop-OfflineTool.exe** from **Assets** below. Run it on Windows 10 or 11 (64-bit). ADB and the other required tools are included.
@@ -96,11 +99,16 @@ jobs:
 
           If an older build stopped during replacement, close it, run this EXE, select the affected session, and click **Recover originals**. Prepare a new session after recovery finishes.
 
-          **Beta:** generation, signing, packaging, and recovery checks have passed. Startup and VR streaming with the modified apps remain untested. Profiles were developed against Virtual Desktop 1.34.25.0 (Quest APK code 10722); other versions must pass every compatibility check.
+          Generation, signing, packaging, and recovery checks have passed. The Quest Pro test reached VR initialization and Streamer authorization; full operation remains unverified. Profiles were developed against Virtual Desktop 1.34.25.0 (Quest APK code 10722); other versions must pass every compatibility check.
 
           See the [README](https://github.com/Nuzair46/fck-VirtualDesktop#readme) for setup, recovery, and troubleshooting. The source archive is optional; SHA256SUMS.txt contains the EXE checksum.
           '@
           Set-Content -LiteralPath 'release-notes.txt' -Value $notes -Encoding UTF8
+          if ($env:RELEASE_EDIT_ONLY -eq 'true') {
+            & gh release edit $env:RELEASE_TAG --notes-file 'release-notes.txt'
+            if ($LASTEXITCODE -ne 0) { throw 'Could not update the existing beta release notes.' }
+            exit 0
+          }
           $arguments=@('release','create',$env:RELEASE_TAG,'--target',$env:RELEASE_COMMIT,
             '--title',('Virtual Desktop Offline Tool '+$env:RELEASE_TAG),'--notes-file','release-notes.txt')
           if ($env:PRERELEASE -eq 'true') { $arguments+='--prerelease' }

@@ -8,7 +8,7 @@ ADB and the other required tools are included. You do not need to install Python
 
 **No Virtual Desktop APK, Streamer installer, or Streamer executable is supplied. You must provide your own originals.** The tool can copy the APK from your connected headset or use an APK file you select.
 
-> **Beta:** patch generation and packaging have been checked. Startup and VR streaming with the modified apps still need testing. Keep your recovery backups.
+> **Known issue in v0.1.0-beta.1:** a Quest Pro test reached the Streamer authorization prompt but showed a black screen with no headset menu. This is under investigation. The release is for testing; working VR streaming has not been verified. Keep your recovery backups.
 
 ## Before you start
 
@@ -60,6 +60,7 @@ Keep the headset connected if that session used it. Recovery restores the saved 
 | Compatibility check failed | Check for a tool update. Matching method names alone do not guarantee a version is supported. |
 | App-data backup unavailable | Check headset root access, or explicitly choose a clean installation if data loss is acceptable. |
 | Recovery needed or `recovery_required` | Click **Recover originals**. After recovery, prepare a new session. |
+| Black screen with no VD menu after authorization | This is a known issue in the first beta. Use **Restore originals** to return to the original apps while it is investigated. |
 | `Cannot query installed APK paths` in an older build | Close the old tool, run this release, select the affected session, and click **Recover originals**. |
 | Another error | Enable **Show details** to read the full log. Keep the session and backups. |
 
@@ -69,7 +70,7 @@ Normal use does not need **Advanced options**. It contains overrides for ADB, de
 
 The current profiles were developed against **Virtual Desktop 1.34.25.0**, with Quest APK version code **10722**. Other versions may work only if all compatibility checks pass. Changed or ambiguous code stops preparation; there is no force-patch option.
 
-Startup, LAN discovery, video, audio, tracking, controllers, reconnect, and restart with the modified apps remain unverified. Online features are outside the tool's scope.
+The first Quest Pro test reached VR initialization and Streamer authorization but did not display the menu. Working LAN discovery, video, audio, tracking, controllers, reconnect, and restart still need verification. Online features are outside the tool's scope.
 
 <details>
 <summary>File locations and backups</summary>
