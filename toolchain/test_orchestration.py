@@ -104,6 +104,13 @@ class OrchestrationTests(unittest.TestCase):
             result=app.install(self.args(confirm_reinstall=False))
         self.assertEqual(result.data['state'],'installed')
         self.assertNotIn('DeviceReplace',self.events)
+
+    def test_manual_detection_does_not_access_adb(self):
+        args=argparse.Namespace(streamer=None,apk=None,pc_only=True,adb=None,serial=None)
+        with patch.object(app.device,'discover_adb',side_effect=AssertionError('ADB touched')):
+            result=app.scan(args)
+        self.assertEqual(result['mode'],'manual')
+        self.assertNotIn('adb_path',result)
     def test_no_consent_means_no_stop_or_install(self):
         with self.assertRaises(RuntimeError):app.install(self.args(confirm_reinstall=False))
         self.assertNotIn('Stop',self.events);self.assertNotIn('DeviceReplace',self.events)

@@ -333,11 +333,33 @@ class AdbDevice:
 
     def _installed_paths(self) -> tuple[str, ...]:
         result = self._shell('pm path --user 0 ' + PACKAGE, check=False)
-        output = _decode(result.stdout)
-        if result.returncode and not re.search(r'unknown package|not found', output + _decode(result.stderr), re.IGNORECASE):
-            raise DeviceError('Cannot query installed APK paths: ' + _decode(result.stderr)[-1000:])
+        output, error = _decode(result.stdout).strip(), _decode(result.stderr).strip()
+        detail = '\n'.join(part for part in (output, error) if part)
+        missing = not detail or re.search(r'unknown package|not found', detail, re.IGNORECASE)
+        if result.returncode and not (result.returncode == 1 and missing):
+            raise DeviceError(f'Cannot query installed APK paths (exit {result.returncode}): ' + (detail[-1500:] or 'no output'))
         paths = [self._validate_apk_path(line[8:].strip()) for line in output.splitlines() if line.startswith('package:')]
-        return tuple(paths)
+        if paths:
+            if result.returncode:
+                raise DeviceError('Package path query returned paths together with an error: ' + detail[-1500:])
+            return tuple(paths)
+        # Quest's package manager returns exit 1 with no output after a normal
+        # uninstall. Confirm absence independently instead of treating that
+        # result as a broken connection or blocking the rollback installer.
+        if not missing:
+            raise DeviceError('Unexpected package path response: ' + detail[-1500:])
+        listed = self._shell('pm list packages --user 0 ' + PACKAGE, check=False)
+        listing = _decode(listed.stdout).strip()
+        listing_error = _decode(listed.stderr).strip()
+        if listed.returncode:
+            reason = '\n'.join(part for part in (listing, listing_error) if part)
+            raise DeviceError(f'Cannot confirm package absence (exit {listed.returncode}): ' + (reason[-1500:] or 'no output'))
+        rows = [line.strip() for line in listing.splitlines() if line.strip()]
+        if any(not re.fullmatch(r'package:[A-Za-z0-9_.]+', line) for line in rows):
+            raise DeviceError('Unexpected package inventory response: ' + listing[-1500:])
+        if 'package:' + PACKAGE in rows:
+            raise DeviceError('Virtual Desktop is listed as installed, but Android returned no APK path. Reconnect the headset and retry.')
+        return ()
 
     def _remote_sha256(self, path: str) -> str:
         self._validate_apk_path(path)
@@ -518,7 +540,21 @@ class AdbDevice:
                 replacement.pax_headers = {}
                 target.addfile(replacement, source.extractfile(entry) if entry.isfile() else None)
         validate_backup_tar(restored)
-        self._event('private_restore_started', archive=record.archive, new_uid=info.uid, restore_staging_path=str(restored))
+        remote_archive = '/data/local/tmp/vd-offline-restore-' + uuid.uuid4().hex + '.tar'
+        self._event('private_restore_started', archive=record.archive, new_uid=info.uid,
+                    restore_staging_path=str(restored), remote_staging_path=remote_archive)
+        self._require_user0()
+        if self._shell('test ! -e ' + shlex.quote(remote_archive), check=False).returncode:
+            raise DataBackupError('The unique remote restore staging path already exists')
+        pushed = self._run(['push', str(restored), remote_archive], timeout=300)
+        if pushed.returncode:
+            raise DataBackupError('Could not transfer the restore archive: ' +
+                                  (_decode(pushed.stdout) + _decode(pushed.stderr))[-1500:])
+        self._shell(self._root_command(mode, 'chmod 600 ' + shlex.quote(remote_archive)))
+        transferred = _decode(self._shell(self._root_command(mode,
+                              'sha256sum ' + shlex.quote(remote_archive))).stdout).strip().split(None, 1)
+        if len(transferred) != 2 or transferred[0].lower() != file_sha256(restored) or transferred[1].strip() != remote_archive:
+            raise DataBackupError('The transferred restore archive failed verification; app data was not cleared')
         self._require_user0()
         self._shell('am force-stop --user 0 ' + PACKAGE)
         cleared = self._shell('pm clear --user 0 ' + PACKAGE)
@@ -526,13 +562,15 @@ class AdbDevice:
             raise DataBackupError('Android did not confirm clearing the destination app data before restore')
         roots = ['/' + r for r in record.roots]
         private_roots = ['/' + r for r in record.roots if r in PRIVATE_ROOTS]
-        command = 'tar -C / -xf - && chown -R {0}:{0} {1} && restorecon -RF {2}'.format(
-            info.uid, ' '.join(private_roots), ' '.join(roots))
-        with restored.open('rb') as stream:
-            self._shell(self._root_command(mode, command), stdin=stream, timeout=1200)
+        # A file is seekable and avoids device-specific tar/su handling of ADB
+        # shell stdin. Verify transfer before clearing any current app data.
+        command = 'tar -C / -xf {0} && chown -R {1}:{1} {2} && restorecon -RF {3}'.format(
+            shlex.quote(remote_archive), info.uid, ' '.join(private_roots), ' '.join(roots))
+        self._shell(self._root_command(mode, command), timeout=1200)
         ownership = _decode(self._shell(self._root_command(mode, 'stat -c %u:%g ' + ' '.join(private_roots))).stdout).splitlines()
         if ownership != [f'{info.uid}:{info.uid}'] * len(private_roots):
             raise DataBackupError('Restored app-data ownership could not be verified')
+        self._shell(self._root_command(mode, 'rm -f -- ' + shlex.quote(remote_archive)))
         # The sanitized staging file is not needed after a successful restore.
         # Its exact location was constructed inside the validated backup folder.
         restored.unlink()

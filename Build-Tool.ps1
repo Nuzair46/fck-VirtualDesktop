@@ -7,6 +7,6 @@ $manifest=Join-Path $PSScriptRoot 'toolchain\ui\app.manifest'
 $bin=Join-Path $PSScriptRoot 'tools'
 New-Item -ItemType Directory -Path $bin -Force | Out-Null
 $exe=Join-Path $bin 'VdOfflineTool.exe'
-& $compiler /nologo /optimize+ /target:winexe /platform:anycpu "/out:$exe" "/win32manifest:$manifest" /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll $source
+& $compiler /nologo /optimize+ /target:winexe /platform:anycpu "/out:$exe" "/win32manifest:$manifest" /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll $source
 if($LASTEXITCODE -ne 0){throw 'Frontend compilation failed'}
 Get-Item -LiteralPath $exe | Select-Object FullName,Length

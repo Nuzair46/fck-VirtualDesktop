@@ -3,10 +3,12 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Security.Principal;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
+using System.Web.Script.Serialization;
 
 internal static class Program
 {
@@ -88,24 +90,42 @@ internal sealed class OfflineToolForm : Form
     private readonly TextBox log = new TextBox();
     private readonly Label status = new Label();
     private readonly TableLayoutPanel inputs = new TableLayoutPanel();
+    private readonly TableLayoutPanel advanced = new TableLayoutPanel();
+    private readonly CheckBox advancedToggle = new CheckBox();
+    private readonly CheckBox detailsToggle = new CheckBox();
+    private readonly Label streamerSummary = new Label();
+    private readonly ComboBox headsetChoice = new ComboBox();
+    private readonly ComboBox sessionChoice = new ComboBox();
+    private string selectedSessionState;
+    private string selectedSessionMode;
+    private bool refreshingChoices;
     private bool running;
 
-    public OfflineToolForm(string root, string python, string initialSession)
+    private sealed class Choice
+    {
+        public string Label;
+        public string Value;
+        public override string ToString() { return Label; }
+    }
+
+    public OfflineToolForm(string root, string python, string initialSession, bool startDetection = true)
     {
         toolRoot = root;
         pythonPath = python;
         Text = "Virtual Desktop Offline Tool";
         Font = new Font("Segoe UI", 9F);
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(820, 670);
-        ClientSize = new Size(930, 740);
+        MinimumSize = new Size(800, 480);
+        ClientSize = new Size(850, 510);
         AutoScaleMode = AutoScaleMode.Dpi;
 
         var layout = new TableLayoutPanel();
         layout.Dock = DockStyle.Fill;
         layout.Padding = new Padding(18);
         layout.ColumnCount = 1;
-        layout.RowCount = 6;
+        layout.RowCount = 8;
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -115,7 +135,7 @@ internal sealed class OfflineToolForm : Form
         Controls.Add(layout);
 
         var intro = new Label();
-        intro.Text = "Prepare a paired Streamer and APK from your original files. Install or restore a prepared session separately.";
+        intro.Text = "Connect your headset or choose your APK. The tool finds your Streamer and uses its included ADB automatically.";
         intro.AutoSize = true;
         intro.MaximumSize = new Size(850, 0);
         intro.Margin = new Padding(0, 0, 0, 12);
@@ -133,7 +153,7 @@ internal sealed class OfflineToolForm : Form
         modes.AutoSize = true;
         modes.WrapContents = true;
         modes.Dock = DockStyle.Fill;
-        automatic.Text = "Extract installed APK using ADB";
+        automatic.Text = "Use connected headset";
         automatic.AutoSize = true;
         automatic.Checked = true;
         manual.Text = "Use an APK file";
@@ -148,34 +168,86 @@ internal sealed class OfflineToolForm : Form
         manual.CheckedChanged += delegate { UpdateMode(); };
 
         AddPathRow(1, "Original APK", apk, apkBrowse, delegate { BrowseFile(apk, "Android package (*.apk)|*.apk|All files (*.*)|*.*"); });
-        AddPathRow(2, "Streamer EXE", streamer, null, delegate { BrowseFile(streamer, "VirtualDesktop.Streamer.exe|VirtualDesktop.Streamer.exe|Executables (*.exe)|*.exe"); });
-        AddPathRow(3, "ADB executable", adb, null, delegate { BrowseFile(adb, "ADB executable (adb.exe)|adb.exe|Executables (*.exe)|*.exe"); });
-        AddTextRow(4, "Device serial", serial);
-        AddPathRow(5, "Working folder", state, null, delegate { BrowseFolder(state); });
-        AddPathRow(6, "Prepared session", session, null, delegate { BrowseFolder(session); });
+        streamerSummary.Text = "Detecting installed Streamer...";
+        streamerSummary.AutoSize = true;
+        streamerSummary.Anchor = AnchorStyles.Left;
+        inputs.Controls.Add(MakeLabel("Streamer"), 0, 2);
+        inputs.Controls.Add(streamerSummary, 1, 2);
+        var chooseStreamer = new Button { Text = "Choose...", Dock = DockStyle.Fill };
+        chooseStreamer.Click += delegate {
+            BrowseFile(streamer, "VirtualDesktop.Streamer.exe|VirtualDesktop.Streamer.exe");
+            if (!running) StartSourceCommand("scan");
+        };
+        inputs.Controls.Add(chooseStreamer, 2, 2);
+        headsetChoice.DropDownStyle = ComboBoxStyle.DropDownList;
+        headsetChoice.Dock = DockStyle.Fill;
+        headsetChoice.SelectedIndexChanged += delegate {
+            if (!refreshingChoices && headsetChoice.SelectedItem is Choice)
+                serial.Text = ((Choice)headsetChoice.SelectedItem).Value;
+        };
+        inputs.Controls.Add(MakeLabel("Headset"), 0, 3);
+        inputs.Controls.Add(headsetChoice, 1, 3);
+        inputs.SetColumnSpan(headsetChoice, 2);
+        sessionChoice.DropDownStyle = ComboBoxStyle.DropDownList;
+        sessionChoice.Dock = DockStyle.Fill;
+        sessionChoice.SelectedIndexChanged += delegate {
+            if (!refreshingChoices && sessionChoice.SelectedItem is Choice)
+                session.Text = ((Choice)sessionChoice.SelectedItem).Value;
+        };
+        inputs.Controls.Add(MakeLabel("Saved session"), 0, 4);
+        inputs.Controls.Add(sessionChoice, 1, 4);
+        inputs.SetColumnSpan(sessionChoice, 2);
+        session.TextChanged += delegate { ReadSessionState(); UpdateAvailability(); };
         session.ReadOnly = true;
         if (!String.IsNullOrWhiteSpace(initialSession)) session.Text = initialSession;
 
-        string defaultStreamer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Virtual Desktop Streamer", "VirtualDesktop.Streamer.exe");
-        if (File.Exists(defaultStreamer)) streamer.Text = defaultStreamer;
+        advancedToggle.Text = "Advanced options";
+        advancedToggle.AutoSize = true;
+        advancedToggle.Margin = new Padding(0, 12, 0, 6);
+        layout.Controls.Add(advancedToggle, 0, 2);
+        advanced.AutoSize = true;
+        advanced.Dock = DockStyle.Top;
+        advanced.ColumnCount = 3;
+        advanced.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 135F));
+        advanced.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        advanced.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88F));
+        advanced.Visible = false;
+        layout.Controls.Add(advanced, 0, 3);
+        AddPathRow(0, "Streamer override", streamer, null, delegate { BrowseFile(streamer, "VirtualDesktop.Streamer.exe|VirtualDesktop.Streamer.exe"); }, advanced);
+        AddPathRow(1, "Custom ADB", adb, null, delegate { BrowseFile(adb, "ADB executable (adb.exe)|adb.exe"); }, advanced);
+        AddTextRow(2, "Device override", serial, advanced);
+        AddPathRow(3, "Working folder", state, null, delegate { BrowseFolder(state); RefreshSessions(); }, advanced);
+        AddPathRow(4, "Session folder", session, null, delegate { BrowseFolder(session); RefreshSessions(); }, advanced);
+        advancedToggle.CheckedChanged += delegate {
+            advanced.Visible = advancedToggle.Checked;
+            ClientSize = new Size(ClientSize.Width, 510 + (advancedToggle.Checked ? 195 : 0) + (detailsToggle.Checked ? 170 : 0));
+        };
         var hints = new Label();
-        hints.Text = "Leave ADB, device serial, or working folder blank to use automatic detection and defaults. Manual APK mode can prepare files without a connected headset.";
+        hints.Text = "No APK or Streamer files are supplied. Authorize this PC on the headset, or provide your original APK file.";
         hints.AutoSize = true;
         hints.MaximumSize = new Size(850, 0);
         hints.ForeColor = SystemColors.GrayText;
         hints.Margin = new Padding(0, 8, 0, 10);
-        layout.Controls.Add(hints, 0, 2);
+        layout.Controls.Add(hints, 0, 4);
 
         var actions = new FlowLayoutPanel();
         actions.AutoSize = true;
         actions.Dock = DockStyle.Fill;
         actions.Margin = new Padding(0, 0, 0, 10);
-        ConfigureButton(check, "Check", delegate { StartSourceCommand("scan"); });
+        ConfigureButton(check, "Refresh", delegate { StartSourceCommand("scan"); RefreshSessions(); });
         ConfigureButton(prepare, "Prepare patches", delegate { StartSourceCommand("prepare"); });
-        ConfigureButton(install, "Install session", delegate { StartSessionCommand("install"); });
+        ConfigureButton(install, "Install", delegate { StartSessionCommand("install"); });
         ConfigureButton(restore, "Restore originals", delegate { StartSessionCommand("restore"); });
         actions.Controls.AddRange(new Control[] { check, prepare, install, restore });
-        layout.Controls.Add(actions, 0, 3);
+        detailsToggle.Text = "Show details";
+        detailsToggle.AutoSize = true;
+        detailsToggle.Margin = new Padding(5, 10, 0, 0);
+        detailsToggle.CheckedChanged += delegate {
+            log.Visible = detailsToggle.Checked;
+            ClientSize = new Size(ClientSize.Width, 510 + (advancedToggle.Checked ? 195 : 0) + (detailsToggle.Checked ? 170 : 0));
+        };
+        actions.Controls.Add(detailsToggle);
+        layout.Controls.Add(actions, 0, 5);
 
         log.Multiline = true;
         log.ReadOnly = true;
@@ -184,12 +256,16 @@ internal sealed class OfflineToolForm : Form
         log.Dock = DockStyle.Fill;
         log.Font = new Font("Consolas", 9F);
         log.BackColor = SystemColors.Window;
-        layout.Controls.Add(log, 0, 4);
-        status.Text = "Ready. Check the environment or prepare a session.";
+        log.Visible = false;
+        layout.Controls.Add(log, 0, 6);
+        status.Text = "Detecting your setup...";
         status.AutoSize = true;
+        status.MaximumSize = new Size(780, 0);
         status.Margin = new Padding(0, 10, 0, 0);
-        layout.Controls.Add(status, 0, 5);
+        layout.Controls.Add(status, 0, 7);
+        RefreshSessions();
         UpdateMode();
+        if (startDetection) Shown += delegate { StartSourceCommand("scan"); };
         FormClosing += delegate(object sender, FormClosingEventArgs e)
         {
             if (running)
@@ -206,17 +282,19 @@ internal sealed class OfflineToolForm : Form
         return new Label { Text = text, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 8, 10, 8) };
     }
 
-    private void AddTextRow(int row, string title, TextBox box)
+    private void AddTextRow(int row, string title, TextBox box, TableLayoutPanel target = null)
     {
+        var table = target ?? inputs;
         box.Dock = DockStyle.Fill;
         box.Margin = new Padding(0, 5, 8, 5);
-        inputs.Controls.Add(MakeLabel(title), 0, row);
-        inputs.Controls.Add(box, 1, row);
-        inputs.SetColumnSpan(box, 2);
+        table.Controls.Add(MakeLabel(title), 0, row);
+        table.Controls.Add(box, 1, row);
+        table.SetColumnSpan(box, 2);
     }
 
-    private void AddPathRow(int row, string title, TextBox box, Button button, Action action)
+    private void AddPathRow(int row, string title, TextBox box, Button button, Action action, TableLayoutPanel target = null)
     {
+        var table = target ?? inputs;
         box.Dock = DockStyle.Fill;
         box.Margin = new Padding(0, 5, 8, 5);
         if (button == null) button = new Button();
@@ -224,9 +302,9 @@ internal sealed class OfflineToolForm : Form
         button.Dock = DockStyle.Fill;
         button.Margin = new Padding(0, 3, 0, 3);
         button.Click += delegate { action(); };
-        inputs.Controls.Add(MakeLabel(title), 0, row);
-        inputs.Controls.Add(box, 1, row);
-        inputs.Controls.Add(button, 2, row);
+        table.Controls.Add(MakeLabel(title), 0, row);
+        table.Controls.Add(box, 1, row);
+        table.Controls.Add(button, 2, row);
     }
 
     private static void ConfigureButton(Button button, string text, Action action)
@@ -263,6 +341,139 @@ internal sealed class OfflineToolForm : Form
     {
         apk.Enabled = manual.Checked && !running;
         apkBrowse.Enabled = manual.Checked && !running;
+        foreach (Control control in inputs.Controls)
+        {
+            int row = inputs.GetRow(control);
+            if (row == 1) control.Visible = manual.Checked;
+            if (row == 3) control.Visible = !manual.Checked;
+        }
+        UpdateAvailability();
+    }
+
+    private static Dictionary<string, object> ReadJson(string path)
+    {
+        if (new FileInfo(path).Length > 16 * 1024 * 1024) throw new IOException("Session journal is too large.");
+        return new JavaScriptSerializer { MaxJsonLength = 16 * 1024 * 1024 }
+            .Deserialize<Dictionary<string, object>>(File.ReadAllText(path).TrimStart('\ufeff'));
+    }
+
+    private static string Value(Dictionary<string, object> data, string key)
+    {
+        object value;
+        return data != null && data.TryGetValue(key, out value) && value != null ? Convert.ToString(value) : "";
+    }
+
+    private void ReadSessionState()
+    {
+        selectedSessionState = selectedSessionMode = null;
+        try {
+            var data = ReadJson(Path.Combine(session.Text, "session.json"));
+            selectedSessionState = Value(data, "state");
+            selectedSessionMode = Value(data, "mode");
+        } catch (IOException) {} catch (ArgumentException) {} catch (InvalidOperationException) {}
+    }
+
+    private static string SessionLabel(Dictionary<string, object> data)
+    {
+        string state = Value(data, "state"), title;
+        switch (state) {
+            case "prepared": title = "Ready to install"; break;
+            case "installed": title = "Installed"; break;
+            case "recovery_required": case "installing": case "restoring": title = "Recovery needed"; break;
+            case "rolled_back": case "restored": title = "Originals restored"; break;
+            case "prepare_failed": title = "Preparation failed"; break;
+            default: title = "Preparing"; break;
+        }
+        DateTimeOffset created;
+        return title + " | " + (DateTimeOffset.TryParse(Value(data, "created_utc"), out created)
+            ? created.ToLocalTime().ToString("g") : "Saved session");
+    }
+
+    private void RefreshSessions()
+    {
+        string preferred = session.Text;
+        var candidates = new List<string>();
+        string work = String.IsNullOrWhiteSpace(state.Text)
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VirtualDesktopOffline")
+            : state.Text;
+        string folder = Path.Combine(work, "sessions");
+        try {
+            if (Directory.Exists(folder)) candidates.AddRange(Directory.GetDirectories(folder).OrderByDescending(p => Path.GetFileName(p)).Take(40));
+            if (!String.IsNullOrWhiteSpace(preferred) && !candidates.Contains(preferred)) candidates.Insert(0, preferred);
+            refreshingChoices = true;
+            sessionChoice.Items.Clear();
+            foreach (string candidate in candidates) {
+                try {
+                    var data = ReadJson(Path.Combine(candidate, "session.json"));
+                    string label = SessionLabel(data);
+                    sessionChoice.Items.Add(new Choice { Label = label, Value = candidate });
+                } catch (IOException) {} catch (ArgumentException) {} catch (InvalidOperationException) {}
+            }
+            int index = -1;
+            for (int i = 0; i < sessionChoice.Items.Count; i++)
+                if (String.Equals(((Choice)sessionChoice.Items[i]).Value, preferred, StringComparison.OrdinalIgnoreCase)) index = i;
+            if (index < 0 && sessionChoice.Items.Count > 0) index = 0;
+            sessionChoice.SelectedIndex = index;
+            if (index >= 0) session.Text = ((Choice)sessionChoice.Items[index]).Value;
+            foreach (Control control in inputs.Controls)
+                if (inputs.GetRow(control) == 4) control.Visible = sessionChoice.Items.Count > 0;
+        } catch (IOException) {} catch (UnauthorizedAccessException) {}
+        finally { refreshingChoices = false; }
+        ReadSessionState();
+        UpdateAvailability();
+    }
+
+    private void UpdateAvailability()
+    {
+        bool recovery = selectedSessionState == "recovery_required" || selectedSessionState == "installing" || selectedSessionState == "restoring";
+        check.Enabled = !running;
+        prepare.Enabled = !running && !recovery && selectedSessionState != "installed";
+        install.Enabled = !running && selectedSessionState == "prepared";
+        restore.Enabled = !running && (recovery || selectedSessionState == "installed");
+        restore.Text = recovery ? "Recover originals" : "Restore originals";
+        if (!running && recovery) status.Text = "Recovery is needed. Choose Recover originals before preparing or installing again.";
+        else if (!running && (selectedSessionState == "rolled_back" || selectedSessionState == "restored"))
+            status.Text = "Originals restored. Prepare a new session to try again.";
+        else if (!running && selectedSessionState == "installed")
+            status.Text = "This session is installed. Restore originals before preparing another version.";
+    }
+
+    private void ShowDetection(string text)
+    {
+        var data = new JavaScriptSerializer { MaxJsonLength = 16 * 1024 * 1024 }
+            .Deserialize<Dictionary<string, object>>(text.TrimStart('\ufeff'));
+        object raw;
+        var pc = data.TryGetValue("streamer", out raw) ? raw as Dictionary<string, object> : null;
+        bool found = Value(pc, "Found") == "True" && Value(pc, "IsAmbiguous") != "True";
+        streamerSummary.Text = found ? "Detected: version " + Value(pc, "Version") : "Not detected. Choose your Streamer executable.";
+        refreshingChoices = true;
+        try {
+            headsetChoice.Items.Clear();
+            object[] devices = data.TryGetValue("devices", out raw) && raw is System.Collections.IEnumerable
+                ? ((System.Collections.IEnumerable)raw).Cast<object>().ToArray() : null;
+            if (devices != null) foreach (object entry in devices) {
+                var item = entry as Dictionary<string, object>;
+                if (item == null) continue;
+                string id = Value(item, "serial");
+                string model = Value(item, "model").Replace('_', ' ');
+                string connection = Value(item, "state");
+                headsetChoice.Items.Add(new Choice { Value = id,
+                    Label = (String.IsNullOrEmpty(model) ? "Headset" : model) + " — " + connection + (devices.Length > 1 ? " (" + id + ")" : "") });
+            }
+            if (headsetChoice.Items.Count == 0) {
+                headsetChoice.Items.Add(new Choice { Value = "", Label = "Connect and authorize your headset, or choose an APK file" });
+                headsetChoice.SelectedIndex = 0;
+            } else {
+                if (headsetChoice.Items.Count > 1) headsetChoice.Items.Insert(0,
+                    new Choice { Value = "", Label = "Choose a headset (" + headsetChoice.Items.Count + " detected)" });
+                int selected = 0;
+                for (int i = 0; i < headsetChoice.Items.Count; i++)
+                    if (((Choice)headsetChoice.Items[i]).Value == serial.Text) selected = i;
+                headsetChoice.SelectedIndex = selected;
+                if (selected >= 0 && !manual.Checked) serial.Text = ((Choice)headsetChoice.Items[selected]).Value;
+            }
+        } finally { refreshingChoices = false; }
+        if (data.ContainsKey("adb_error")) AppendLog("Headset detection: " + Value(data, "adb_error"));
     }
 
     private static void AddOption(List<string> args, string option, string value)
@@ -278,8 +489,16 @@ internal sealed class OfflineToolForm : Form
             MessageBox.Show(this, "Choose the original APK file first.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
+        if (command == "prepare" && automatic.Checked && headsetChoice.Items.Count > 1 && String.IsNullOrWhiteSpace(serial.Text))
+        {
+            MessageBox.Show(this, "Choose which connected headset to use.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
         var args = new List<string> { command };
-        if (manual.Checked) AddOption(args, "--apk", apk.Text);
+        if (manual.Checked) {
+            if (command == "scan") args.Add("--pc-only");
+            else AddOption(args, "--apk", apk.Text);
+        }
         AddOption(args, "--streamer", streamer.Text);
         AddOption(args, "--adb", adb.Text);
         AddOption(args, "--serial", serial.Text);
@@ -317,7 +536,7 @@ internal sealed class OfflineToolForm : Form
             catch (Exception ex) { AppendLog("Administrator relaunch did not complete: " + ex.Message); }
             return;
         }
-        using (var confirmation = new InstallConfirmation(command == "restore"))
+        using (var confirmation = new InstallConfirmation(command == "restore", selectedSessionMode == "adb"))
         {
             if (confirmation.ShowDialog(this) != DialogResult.OK) return;
             var args = new List<string> { command, "--session", selected };
@@ -346,6 +565,7 @@ internal sealed class OfflineToolForm : Form
         }
         running = true;
         inputs.Enabled = false;
+        advanced.Enabled = false;
         check.Enabled = prepare.Enabled = install.Enabled = restore.Enabled = false;
         status.Text = "Running " + operation + "...";
         AppendLog("");
@@ -356,6 +576,7 @@ internal sealed class OfflineToolForm : Form
         {
             int result = -1;
             string error = null;
+            var captured = new StringBuilder();
             try
             {
                 var start = new ProcessStartInfo();
@@ -383,7 +604,10 @@ internal sealed class OfflineToolForm : Form
                 using (var process = new Process())
                 {
                     process.StartInfo = start;
-                    process.OutputDataReceived += delegate(object sender, DataReceivedEventArgs e) { QueueLine(e.Data); };
+                    process.OutputDataReceived += delegate(object sender, DataReceivedEventArgs e) {
+                        if (e.Data != null) lock (captured) captured.AppendLine(e.Data);
+                        QueueLine(e.Data);
+                    };
                     process.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e) { QueueLine(e.Data); };
                     process.Start();
                     process.BeginOutputReadLine();
@@ -397,10 +621,17 @@ internal sealed class OfflineToolForm : Form
             {
                 if (error != null) AppendLog("ERROR: " + error);
                 AppendLog("Operation finished with exit code " + result + ".");
-                status.Text = result == 0 ? "Finished: " + operation + "." : "Operation did not complete. See the log above.";
+                if (operation == "scan" && result == 0) {
+                    try { ShowDetection(captured.ToString()); }
+                    catch (Exception ex) { AppendLog("Detection response could not be read: " + ex.Message); }
+                }
+                status.Text = result == 0 ? (operation == "scan" ? "Ready. Prepare patches to continue." : "Finished: " + operation + ".")
+                    : "The operation did not complete. See details below.";
+                if (result != 0) detailsToggle.Checked = true;
                 running = false;
                 inputs.Enabled = true;
-                check.Enabled = prepare.Enabled = install.Enabled = restore.Enabled = true;
+                advanced.Enabled = true;
+                RefreshSessions();
                 UpdateMode();
             }));
         });
@@ -440,7 +671,7 @@ internal sealed class InstallConfirmation : Form
     public bool ForceStopApproved { get { return forceStop.Checked; } }
     public bool DisableUpdater { get { return !restoring && disableUpdater.Checked; } }
 
-    public InstallConfirmation(bool restore)
+    public InstallConfirmation(bool restore, bool usesHeadset)
     {
         restoring = restore;
         Text = restore ? "Restore this session" : "Install this session";
@@ -461,7 +692,9 @@ internal sealed class InstallConfirmation : Form
         var summary = new Label();
         summary.AutoSize = true;
         summary.MaximumSize = new Size(550, 0);
-        summary.Text = "This changes the installations recorded in the selected session. Replacing the headset APK may require uninstalling it first. Without a connected headset, the prepared APK stays available for manual installation.";
+        summary.Text = usesHeadset
+            ? "This changes the Streamer and headset recorded in this session. Replacing the headset APK may require uninstalling it first. Your original files and verified backups are kept for recovery."
+            : "This changes the PC Streamer only. Your prepared APK remains available in the session output folder for manual installation.";
         summary.Margin = new Padding(0, 0, 0, 14);
         panel.Controls.Add(summary);
         replacement.Text = "I approve uninstalling and reinstalling the headset app if required.";
@@ -477,6 +710,7 @@ internal sealed class InstallConfirmation : Form
         discard.AutoSize = true;
         discard.Margin = new Padding(18, 0, 0, 12);
         panel.Controls.Add(discard);
+        replacement.Visible = preserve.Visible = discard.Visible = usesHeadset;
         forceStop.Text = "Allow stopping running Virtual Desktop processes if needed.";
         forceStop.AutoSize = true;
         forceStop.Margin = new Padding(0, 0, 0, 15);

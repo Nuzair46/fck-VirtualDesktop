@@ -12,6 +12,7 @@ try {
     & (Join-Path $PSScriptRoot 'Prepare-Runtime.ps1')
     & (Join-Path $PSScriptRoot 'Build-ManagedTool.ps1')
     & (Join-Path $PSScriptRoot 'Build-Tool.ps1')
+    & (Join-Path $PSScriptRoot 'toolchain\Test-Frontend.ps1')
     $python=Join-Path $PSScriptRoot 'runtime\python\python.exe'
     & $python (Join-Path $PSScriptRoot 'android-runtime\prepare_signing_tools.py')
     if ($LASTEXITCODE -ne 0) { throw 'Android signing tools could not be provisioned.' }

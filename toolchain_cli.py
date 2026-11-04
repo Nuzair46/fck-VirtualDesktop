@@ -249,7 +249,9 @@ def scan(args):
         result['streamer_known_baseline'] = pc.get('Sha256', '').lower() == PC_HASH
     except Exception as exc:
         result['streamer_error'] = str(exc)
-    if args.apk:
+    if getattr(args, 'pc_only', False):
+        result['mode'] = 'manual'
+    elif args.apk:
         path = Path(args.apk).resolve(strict=True)
         result['mode'] = 'manual'
         result['apk'] = {'path': str(path), 'sha256': sha(path)}
@@ -393,6 +395,10 @@ def install(args):
     require_admin()
     session = Session.load(args.session)
     if session.data['state'] != 'prepared':
+        if session.data['state'] in ('recovery_required', 'installing', 'restoring'):
+            raise RuntimeError('This session needs recovery. Choose Recover originals before preparing or installing again.')
+        if session.data['state'] in ('rolled_back', 'restored'):
+            raise RuntimeError('The originals were restored. Prepare a new session before installing again.')
         raise RuntimeError('Only a prepared session can be installed. Current state: ' + session.data['state'])
     report = session.validate_artifacts()
     detected = host('Detect', session.install_dir)
@@ -535,6 +541,8 @@ def main():
     commands = parser.add_subparsers(dest='command', required=True)
     for name in ('scan', 'prepare'):
         p = commands.add_parser(name)
+        if name == 'scan':
+            p.add_argument('--pc-only', action='store_true', help='Detect the PC Streamer without accessing ADB.')
         p.add_argument('--apk', type=Path)
         p.add_argument('--streamer', type=Path)
         p.add_argument('--adb', type=Path)

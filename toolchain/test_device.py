@@ -73,9 +73,13 @@ class FakeAdb:
         self.pull_corrupt = False
         self.install_failure = None
         self.install_wrong_hash = False
+        self.path_result = None
+        self.list_result = None
         self.tar_data = make_tar()
         self.tar_failure = False
         self.restored_tar = None
+        self.remote_files = {}
+        self.push_corrupt = False
         self.restore_failure = False
         self.force_stopped = False
         self.devices_text = 'List of devices attached\n192.168.1.2:5555 device product:seacliff model:Quest_Pro\n'
@@ -100,6 +104,10 @@ class FakeAdb:
             assert command[1] == REMOTE
             Path(command[2]).write_bytes(b'corrupt' if self.pull_corrupt else self.installed)
             return self.result(args, '1 file pulled')
+        if command[0] == 'push':
+            assert command[2].startswith('/data/local/tmp/vd-offline-restore-')
+            self.remote_files[command[2]] = b'corrupt' if self.push_corrupt else Path(command[1]).read_bytes()
+            return self.result(args, '1 file pushed')
         if command[0] == 'install':
             assert command[1:4] == ['-r', '--user', '0']
             self.mutations.append('install_attempt')
@@ -134,8 +142,13 @@ class FakeAdb:
             uid = self.uid if self.package_uid_override is None else self.package_uid_override
             return self.result(args, f'package:{d.PACKAGE} uid:{uid}\npackage:{d.PACKAGE}.other uid:19999\n')
         if command == 'pm path --user 0 ' + d.PACKAGE:
-            return self.result(args, 'package:' + REMOTE + '\n' if self.installed is not None else '')
-        if command.startswith('sha256sum '):
+            if self.path_result is not None: return self.result(args, *self.path_result)
+            return self.result(args, 'package:' + REMOTE + '\n' if self.installed is not None else '',
+                               0 if self.installed is not None else 1)
+        if command == 'pm list packages --user 0 ' + d.PACKAGE:
+            if self.list_result is not None: return self.result(args, *self.list_result)
+            return self.result(args, 'package:' + d.PACKAGE + '\n' if self.installed is not None else '')
+        if command.startswith('sha256sum ') and shlex.split(command)[1] == REMOTE:
             assert shlex.split(command)[1] == REMOTE
             return self.result(args, hashlib.sha256(self.installed).hexdigest() + '  ' + REMOTE + '\n')
         if command == 'id -u': return self.result(args, '0' if self.root == 'adbd' else '2000')
@@ -153,8 +166,19 @@ class FakeAdb:
         if command == 'pm clear --user 0 ' + d.PACKAGE:
             self.mutations.append('clear_data')
             return self.result(args, 'Success\n')
-        if command.startswith('tar -C / -xf - && chown -R '):
-            self.restored_tar = stdin.read()
+        if command.startswith('test ! -e /data/local/tmp/vd-offline-restore-'):
+            return self.result(args, '', int(shlex.split(command)[3] in self.remote_files))
+        if command.startswith('chmod 600 /data/local/tmp/vd-offline-restore-'):
+            assert shlex.split(command)[2] in self.remote_files
+            return self.result(args)
+        if command.startswith('sha256sum /data/local/tmp/vd-offline-restore-'):
+            name = shlex.split(command)[1]
+            return self.result(args, hashlib.sha256(self.remote_files[name]).hexdigest() + '  ' + name + '\n')
+        if command.startswith('rm -f -- /data/local/tmp/vd-offline-restore-'):
+            self.remote_files.pop(shlex.split(command)[3])
+            return self.result(args)
+        if command.startswith('tar -C / -xf /data/local/tmp/vd-offline-restore-'):
+            self.restored_tar = self.remote_files[shlex.split(command)[4]]
             self.mutations.append('restore_data')
             return self.result(args, '', 1 if self.restore_failure else 0, 'restore failed' if self.restore_failure else '')
         if command.startswith('stat -c %u:%g '):
@@ -193,6 +217,37 @@ class DeviceTests(unittest.TestCase):
     def test_adb_absence_is_allowed(self):
         with mock.patch.object(d.shutil, 'which', return_value=None), mock.patch.object(Path, 'is_file', return_value=False):
             self.assertIsNone(d.discover_adb())
+
+    def test_missing_package_exit_one_is_confirmed_by_inventory(self):
+        self.fake.installed = None
+        info = self.device.inspect()
+        self.assertFalse(info.installed)
+        self.assertIsNone(info.installed_sha256)
+        self.assertIn(['fake-adb','-s',self.device.serial,'shell','-T',
+                       'pm list packages --user 0 ' + d.PACKAGE], self.fake.calls)
+        self.assertEqual(self.fake.mutations, [])
+
+    def test_empty_path_with_present_package_is_not_treated_as_uninstalled(self):
+        self.fake.path_result = ('', 1, '')
+        with self.assertRaisesRegex(d.DeviceError, 'listed as installed'):
+            self.device.inspect()
+
+    def test_package_inventory_failure_is_not_treated_as_uninstalled(self):
+        self.fake.installed = None
+        self.fake.list_result = ('', 1, '')
+        with self.assertRaisesRegex(d.DeviceError, 'Cannot confirm package absence.*exit 1'):
+            self.device.inspect()
+
+    def test_offline_package_query_preserves_transport_diagnostic(self):
+        self.fake.path_result = ('', 1, 'error: device offline')
+        with self.assertRaisesRegex(d.DeviceError, 'device offline'):
+            self.device.inspect()
+
+    def test_success_exit_with_invalid_inventory_is_not_absence(self):
+        self.fake.installed = None
+        self.fake.list_result = ('Error: package service unavailable', 0, '')
+        with self.assertRaisesRegex(d.DeviceError, 'Unexpected package inventory'):
+            self.device.inspect()
 
     def _bundled_adb_fixture(self):
         directory = self.root / 'bundled-platform-tools'
@@ -376,6 +431,19 @@ class DeviceTests(unittest.TestCase):
         self.fake.hardware = 'DIFFERENT-HEADSET'
         with self.assertRaises(d.DataBackupError): self.device.restore_private_data(backup)
         self.assertNotIn('clear_data', self.fake.mutations)
+
+    def test_corrupt_restore_transfer_does_not_clear_app_data(self):
+        backup = self.device.backup_private_data(self.root / 'backup')
+        self.fake.push_corrupt = True
+        with self.assertRaisesRegex(d.DataBackupError, 'transferred restore archive'):
+            self.device.restore_private_data(backup)
+        self.assertNotIn('clear_data', self.fake.mutations)
+
+    def test_successful_restore_uses_verified_file_and_removes_remote_stage(self):
+        backup = self.device.backup_private_data(self.root / 'backup')
+        self.device.restore_private_data(backup)
+        self.assertEqual(self.fake.remote_files, {})
+        self.assertTrue(self.fake.restored_tar)
 
     def test_corrupted_backup_blocks_uninstall(self):
         backup = self.device.backup_private_data(self.root / 'backup')
