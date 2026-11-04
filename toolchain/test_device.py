@@ -208,7 +208,7 @@ class DeviceTests(unittest.TestCase):
     def test_verified_bundled_adb_has_priority_over_path(self):
         bundled = self._bundled_adb_fixture()
         with mock.patch.object(d, 'BUNDLED_ADB', bundled), mock.patch.object(d.shutil, 'which', return_value='another-adb.exe'):
-            self.assertEqual(d.discover_adb(), bundled)
+            self.assertEqual(d.discover_adb(), bundled.resolve())
         self.assertEqual(self.fake.calls, [])
 
     def test_explicit_external_adb_overrides_bundled(self):
@@ -216,7 +216,7 @@ class DeviceTests(unittest.TestCase):
         external = self.root / 'external-adb.exe'
         external.write_bytes(b'operator-selected external tool')
         with mock.patch.object(d, 'BUNDLED_ADB', bundled):
-            self.assertEqual(d.discover_adb(external), external)
+            self.assertEqual(d.discover_adb(external), external.resolve())
 
     def test_modified_bundled_adb_dependency_is_rejected(self):
         bundled = self._bundled_adb_fixture()

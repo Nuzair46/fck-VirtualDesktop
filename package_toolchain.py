@@ -8,7 +8,7 @@ import shutil
 import zipfile
 
 ROOT = Path(__file__).resolve().parent
-ROOT_SOURCES = ['.gitignore', 'README.txt', 'build.py', 'toolchain_cli.py',
+ROOT_SOURCES = ['.gitignore', 'README.md', 'build.py', 'toolchain_cli.py',
                 'Build-Patches.ps1', 'Build-ManagedTool.ps1', 'Build-Tool.ps1',
                 'Launch-Tool.ps1', 'Prepare-Runtime.ps1', 'runtime-pins.json',
                 'Start.cmd', 'package_toolchain.py', 'Build-Standalone.ps1', 'Build-Release.ps1']
