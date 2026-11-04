@@ -43,7 +43,12 @@ jobs:
           compression-level: 0
 
   release:
-    if: github.event_name == 'workflow_dispatch'
+    # Temporary bootstrap for the explicitly requested first release; remove after publication.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+       github.repository == 'Nuzair46/fck-VirtualDesktop' &&
+       github.event.head_commit.message == 'Release v0.1.0-beta.1')
     needs: executable
     runs-on: windows-latest
     permissions:
@@ -54,13 +59,13 @@ jobs:
         with:
           name: VirtualDesktop-OfflineTool-windows-x64
           path: release-files
-      - name: Publish manual release
+      - name: Publish release
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ inputs.tag }}
-          PRERELEASE: ${{ inputs.prerelease }}
+          RELEASE_TAG: ${{ inputs.tag || 'v0.1.0-beta.1' }}
+          PRERELEASE: ${{ github.event_name == 'push' || inputs.prerelease }}
           RELEASE_COMMIT: ${{ github.sha }}
         run: |
           $ErrorActionPreference='Stop'
@@ -71,11 +76,29 @@ jobs:
           $actual=(Get-FileHash -LiteralPath 'release-files/VirtualDesktop-OfflineTool.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actual -ne $expected) { throw 'Release executable checksum mismatch.' }
           $notes=@'
-          Run VirtualDesktop-OfflineTool.exe on Windows x64. The EXE includes the required tools and ADB; supply your own original APK/Streamer or connect an authorized headset.
+          ## Download and run
 
-          Includes checked code profiles, optional Updater.exe backup/restore, and manual APK mode. Profiles were derived from Virtual Desktop 1.34.25.0. Other versions require all profile checks to pass.
+          Download **VirtualDesktop-OfflineTool.exe** from **Assets** below. Run it on Windows 10 or 11 (64-bit). ADB and the other required tools are included.
 
-          Experimental: packaging and static checks pass; headset startup and VR streaming still require runtime testing. Original application binaries and private keys are not included.
+          1. Connect and authorize your headset, or select **Use an APK file**.
+          2. Check the detected Streamer, then click **Prepare patches**.
+          3. When preparation finishes, click **Install** and review the options.
+
+          **You must supply your own original APK and installed Streamer. No Virtual Desktop application files are included.** In APK-file mode, Install changes only the PC; install the generated APK on your headset yourself.
+
+          ## Included
+
+          - Automatic Streamer and headset detection, with advanced settings hidden by default.
+          - APK-file mode for preparing without a connected headset.
+          - Optional updater disable and restore.
+          - Original-file backups and headset app-data preservation with root access.
+          - Recovery that handles a temporarily uninstalled app and verifies transferred backup archives.
+
+          If an older build stopped during replacement, close it, run this EXE, select the affected session, and click **Recover originals**. Prepare a new session after recovery finishes.
+
+          **Beta:** generation, signing, packaging, and recovery checks have passed. Startup and VR streaming with the modified apps remain untested. Profiles were developed against Virtual Desktop 1.34.25.0 (Quest APK code 10722); other versions must pass every compatibility check.
+
+          See the [README](https://github.com/Nuzair46/fck-VirtualDesktop#readme) for setup, recovery, and troubleshooting. The source archive is optional; SHA256SUMS.txt contains the EXE checksum.
           '@
           Set-Content -LiteralPath 'release-notes.txt' -Value $notes -Encoding UTF8
           $arguments=@('release','create',$env:RELEASE_TAG,'--target',$env:RELEASE_COMMIT,

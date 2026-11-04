@@ -1,108 +1,97 @@
 # Virtual Desktop Offline Tool
 
-A Windows tool that prepares a locally paired Virtual Desktop Streamer and Quest APK for offline use. Run one EXE, choose your files or connect your headset, and prepare the patches.
+Prepare and install offline patches for your Virtual Desktop Streamer and Quest app from one Windows EXE.
 
-**No Virtual Desktop APK, Streamer installer, or Streamer executable is supplied. You must provide your own original files.** The tool can extract your installed APK from an authorized headset over ADB, or you can select an APK file yourself.
+**[Download the Windows EXE](https://github.com/Nuzair46/fck-VirtualDesktop/releases/download/v0.1.0-beta.1/VirtualDesktop-OfflineTool.exe)** · [All releases](https://github.com/Nuzair46/fck-VirtualDesktop/releases)
 
-> **Experimental:** patch generation, signing, and file checks have passed. The modified apps have not yet been tested for startup or VR streaming on a headset. Keep your originals and recovery backups.
+ADB and the other required tools are included. You do not need to install Python, Java, or build tools.
 
-## What you need
+**No Virtual Desktop APK, Streamer installer, or Streamer executable is supplied. You must provide your own originals.** The tool can copy the APK from your connected headset or use an APK file you select.
 
-- A Windows 10 or 11 PC running the 64-bit version of Windows.
-- Your original Virtual Desktop Streamer installed on the PC.
-- Your original Quest APK, either on a connected headset or saved as a file.
-- Matching Streamer and APK versions.
+> **Beta:** patch generation and packaging have been checked. Startup and VR streaming with the modified apps still need testing. Keep your recovery backups.
 
-The download includes the tools it needs, including ADB. You do not need to install Python, Java, a .NET SDK, or Android build tools separately.
+## Before you start
 
-For automatic headset installation, enable ADB access and authorize the PC on the headset. Preserving app data during replacement requires root access. The headset still needs its VR runtime services; the patch does not replace the headset OS.
+- Use a Windows 10 or 11 PC with 64-bit Windows.
+- Install your original Virtual Desktop Streamer on the PC.
+- Have the matching original Quest app on your headset, or an original APK file.
+- For automatic headset setup, enable ADB access and authorize this PC on the headset. Root access is required to preserve app data when the app must be replaced.
 
-## Get started
+The headset still needs its VR runtime services. This tool does not replace the headset OS.
 
-1. Download **VirtualDesktop-OfflineTool.exe** from this repository's **Releases** page and run it. If there is no release yet, a repository maintainer can create one using the workflow below.
-2. The tool detects your Streamer and connected headsets automatically. Choose how to provide the APK:
-   - **Use connected headset:** connect your headset and select it if several devices are listed.
-   - **Use an APK file:** browse to your original APK. A connected headset is not required for this mode.
-3. Use **Choose...** for your installed **VirtualDesktop.Streamer.exe** only if it was not detected.
-4. Click **Prepare patches**. The tool saves the originals, checks compatibility, and builds both patched files. This step leaves your installed apps unchanged.
-5. Click **Install** when you are ready. Windows will request administrator access to update the Streamer installation.
+## Set up with a connected headset
 
-In manual APK mode, **Install** updates only the PC side. The generated **VirtualDesktop-local.apk** remains in the session's `output` folder for you to install yourself.
+1. **Download and run `VirtualDesktop-OfflineTool.exe`.** Choose the EXE under the release's **Assets**; the source ZIP is for developers. First launch takes a little longer while the included tools are unpacked.
+2. **Connect your headset and accept its ADB authorization prompt.** Leave **Use connected headset** selected. Click **Refresh** if needed, and select your headset if more than one is connected.
+3. **Check the detected Streamer.** If it is missing, click **Choose...** and select your installed `VirtualDesktop.Streamer.exe`.
+4. **Click Prepare patches and wait for it to finish.** This checks compatibility and saves the originals. Your installed apps are unchanged at this stage.
+5. **Click Install.** Review the replacement and app-data choices, then approve the Windows administrator prompt. Keep the headset connected until the operation finishes.
 
-Saved sessions are selected automatically. ADB, device, working-folder, and session-folder overrides are available under **Advanced options**; normal use does not require them. **Show details** opens the full operation log.
+Leave **Preserve app data** selected if you want to keep your data. This needs a verified root backup; without one, installation stops. Choose a clean installation only if you accept losing the existing app data.
 
-## Installation options
+You can also select **Disable Streamer updater** in the installation dialog. This renames `Updater.exe` to `Updater.exe.bak`; restoring the originals reverses it. A later vendor installation or repair may recreate the updater.
 
-### Disable the Streamer updater
+## Have an APK file instead?
 
-Select **Disable Streamer updater** to rename `Updater.exe` to `Updater.exe.bak` during installation. The tool records its original hash and will not overwrite an existing backup. **Restore originals** reverses the rename.
+Select **Use an APK file**, browse to your original APK, then follow steps 3–5 above. No connected headset or separate ADB download is needed to prepare the files.
 
-A later vendor installation or repair may recreate `Updater.exe`.
-
-### Preserve headset app data
-
-The generated APK uses a local signing certificate. Android may require uninstalling the original app before installing it.
-
-By default, automatic replacement requires a verified root backup and restores supported app data afterward. Allowing a clean installation with data loss is a separate option. The tool asks for replacement consent and does not uninstall the app for unrelated installation errors.
-
-If you install the APK manually, preserve your headset data before replacing the original app.
-
-## Which versions work?
-
-The current patch profiles were developed against **Virtual Desktop 1.34.25.0**, with Quest APK version code **10722**.
-
-The tool checks the relevant code rather than rejecting every file with a different hash. Another release may match the same profile, but unchanged method names alone do not guarantee compatibility. Missing, changed, or ambiguous matches stop preparation.
-
-A successful profile match is not proof that every feature works on that release. Supporting a release with changed code may require an updated tool or profile. There is no option to force a patch onto an incompatible build.
-
-## Restore the originals
-
-Open the tool, select the same prepared session, and click **Restore originals**. It checks the saved files, restores the applicable originals and pre-patch headset data, removes its pairing settings, and reverses its updater rename.
-
-After an interrupted installation, the action becomes **Recover originals**. Prepare and Install stay disabled until recovery finishes. The tool handles a temporarily uninstalled APK during replacement and transfers a verified archive file when restoring headset data.
-
-Restore stops if an installed app or updater file has changed unexpectedly, so it does not overwrite an unrelated update.
-
-Keep the session folder and the Streamer's backup and receipt files until you no longer need recovery.
-
-## Where are my files?
-
-By default, working files are saved in:
+In this mode, **Install updates the PC Streamer only**. Install the generated `VirtualDesktop-local.apk` on the headset yourself. It is in the session's `output` folder, under:
 
 ```text
-%LOCALAPPDATA%\VirtualDesktopOffline
+%LOCALAPPDATA%\VirtualDesktopOffline\sessions
 ```
 
-- `sessions` contains originals, generated patches, recovery backups, and logs.
-- `identity` contains your persistent local pairing and APK signing key.
-- `tool-cache` contains the tools unpacked from the EXE.
+Replacing the original APK may require uninstalling it because the signing certificate changes. Back up your headset app data first.
 
-Each completed session has an `output` folder containing the patched Streamer, `VirtualDesktop-local.apk`, and `build-report.json`. Do not use outputs while `BUILD-INCOMPLETE.txt` is present.
+## Undo changes or recover after an error
 
-Keep your signing keys, pairing identity, generated APKs, and headset backups private. Reuse the same identity for later local builds.
+Open the tool, select the session you used, and click **Restore originals**. For an interrupted installation, the button reads **Recover originals**.
+
+Keep the headset connected if that session used it. Recovery restores the saved originals and, when available, the pre-install app-data backup. Once recovery finishes, click **Prepare patches** to start a fresh session before trying again.
+
+**Keep your session folder, signing keys, and Streamer backup files.** They are needed for recovery and later builds. Restore stops if files have changed unexpectedly.
 
 ## Troubleshooting
 
-| Problem | What to do |
+| What you see | What to do |
 | --- | --- |
-| Headset is missing or unauthorized | Enable ADB access, connect the headset, and accept its authorization prompt. You can also choose manual APK mode. |
-| Several devices or Streamer installations are found | Select the device serial or Streamer executable explicitly. |
-| Compatibility check fails | Keep the original files and check for a tool update that supports your version. |
-| An updater backup already exists | Review the existing `Updater.exe.bak`; the tool will not overwrite it. |
-| Data preservation is unavailable | Check root access. Choose a clean installation only if you accept losing app data. |
-| Installation or recovery fails | Keep the session and backups, then inspect its logs before retrying. |
+| Headset missing or unauthorized | Check the connection and ADB access, accept the headset prompt, then click **Refresh**. |
+| Streamer not detected | Click **Choose...** and select `VirtualDesktop.Streamer.exe`. |
+| Compatibility check failed | Check for a tool update. Matching method names alone do not guarantee a version is supported. |
+| App-data backup unavailable | Check headset root access, or explicitly choose a clean installation if data loss is acceptable. |
+| Recovery needed or `recovery_required` | Click **Recover originals**. After recovery, prepare a new session. |
+| `Cannot query installed APK paths` in an older build | Close the old tool, run this release, select the affected session, and click **Recover originals**. |
+| Another error | Enable **Show details** to read the full log. Keep the session and backups. |
 
-## Build and publish a release
+Normal use does not need **Advanced options**. It contains overrides for ADB, devices, and working folders.
 
-Repository maintainers can generate the standalone EXE without uploading any APK or Streamer files:
+## Supported versions
 
-1. Open **Actions → Build and release Windows EXE**.
-2. Click **Run workflow** and enter a new tag, such as `v0.1.0`.
-3. Choose whether to mark it as a prerelease, then run the workflow.
+The current profiles were developed against **Virtual Desktop 1.34.25.0**, with Quest APK version code **10722**. Other versions may work only if all compatibility checks pass. Changed or ambiguous code stops preparation; there is no force-patch option.
 
-The workflow builds and verifies the EXE, then publishes it with a checksum and source archive. Only a manual run publishes a release. Pushes and pull requests build downloadable workflow artifacts. Existing releases are not overwritten.
+Startup, LAN discovery, video, audio, tracking, controllers, reconnect, and restart with the modified apps remain unverified. Online features are outside the tool's scope.
 
-To build locally from this codebase:
+<details>
+<summary>File locations and backups</summary>
+
+The default working folder is `%LOCALAPPDATA%\VirtualDesktopOffline`:
+
+- `sessions`: original files, patched outputs, recovery backups, and logs.
+- `identity`: your local pairing identity and APK signing key. Reuse these for later builds.
+- `tool-cache`: tools unpacked from the EXE.
+
+Keep signing keys, generated APKs, and headset backups private. Do not use session outputs while `BUILD-INCOMPLETE.txt` is present.
+
+</details>
+
+<details>
+<summary>For maintainers: build and publish</summary>
+
+To publish a release, open [Actions: Build and release Windows EXE](https://github.com/Nuzair46/fck-VirtualDesktop/actions/workflows/build-windows.yml), click **Run workflow**, enter a new version tag, and choose whether it is a prerelease. The workflow builds and checks the EXE, then uploads it with a checksum and source archive. No APK or Streamer upload is required. Existing releases are not overwritten.
+
+Ordinary pushes and pull requests only build workflow artifacts.
+
+To build locally, choose a new output directory:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Build-Release.ps1 -OutputDirectory C:\path\new-release
@@ -110,8 +99,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Build-Release.ps1 -OutputD
 
 The first source build downloads pinned dependencies. End users only need the resulting EXE.
 
-## Current limits
-
-The tool targets local pairing and the patched startup paths. Online features are outside its scope. Actual headset startup, LAN discovery, video, audio, tracking, controllers, reconnect, and restart still need runtime testing.
+</details>
 
 This is an unofficial modification and is not affiliated with Virtual Desktop or Meta. Bundled third-party tools retain their included licenses and notices.
